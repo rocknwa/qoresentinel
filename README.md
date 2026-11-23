@@ -4,5 +4,5 @@ An AI smart-contract auditing and post-quantum readiness platform. Phase 1 conta
 
 See [backend/README.md](backend/README.md) for setup and APIs.
 
-**Security:** This prototype does not implement user authentication, worker isolation, retained-file deletion, or production-ready audit queuing. Do not deploy it publicly or submit confidential contracts. AI audit output is not a security guarantee.
+**Security:** This prototype does not implement user authentication, worker isolation, retained-file deletion, or production-ready audit queuing yet . Do not deploy it publicly or submit confidential contracts. AI audit output is not a security guarantee.
  
