@@ -7,3 +7,12 @@
 .checkout-details .primary,.checkout-details .secondary{margin-top:14px}
 @media(max-width:900px){.topbar-actions{gap:6px}.wallet-connect{font-size:9px;padding:8px}}
 @media(max-width:700px){.wallet-connect{padding:7px 6px;font-size:0}.wallet-connect svg{width:16px;height:16px}.topbar .new-audit-top{margin-left:2px}}
+
+/* QoreX native login and faucet */
+.native-login-banner{display:flex;gap:16px;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:18px;padding:15px 18px;border:1px solid #306077;background:#142938;border-radius:6px;color:#d8ebf4}
+.native-login-banner.low-gas{border-color:#a77747;background:#32271d}
+.native-login-banner strong{font-size:13px}.native-login-banner p{font-size:12px;color:#aabccc;margin:5px 0 9px;max-width:720px;line-height:1.5}
+.native-balance{margin-left:12px;font-size:11px;color:#9ec4db}
+.native-login-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.native-login-actions .secondary,.native-login-actions .primary{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none}
+@media(max-width:700px){.native-login-banner{padding:13px}.native-login-actions{width:100%}.native-login-actions button,.native-login-actions a{flex:1;justify-content:center}}

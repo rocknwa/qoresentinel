@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-TEST_WALLET='0x'+'a'*40
+TEST_WALLET='qor178nscfyp0cq2ac5x7un4u98xrj4ayp6pt0kw08'
 @pytest.fixture
 def client(tmp_path,monkeypatch):
     from app import storage,auth

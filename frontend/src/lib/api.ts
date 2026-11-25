@@ -2,7 +2,7 @@ export type Project={id:string;name:string;files?:string[]};
 export type Audit={id:string;status:'queued'|'running'|'completed'|'failed';report_markdown:string;agents:unknown[];findings:unknown[];findings_status:string;completed_agents:number;total_agents:number;error?:string};
 export type PqcScan={status:string;method:string;components:number;evidence:Array<{file:string;line:number;algorithm:string;classification:string;excerpt:string;confidence:string}>;cbom:Record<string,unknown>;limitations:string};
 export type TxEvidence={found:boolean;tx_hash:string;network:string;success?:boolean;hybrid_layer_present?:boolean;chain_reports_verified?:boolean;height?:string;verification_method?:string};
-export type PaymentIntent={id:string;network:string;chain_id:number;currency:string;decimals:number;token:string;recipient:string;amount_raw:string;amount_fusd:string;expires_at:number;status:string;notice:string};
+export type PaymentIntent={id:string;network:string;chain_id:number;currency:string;decimals:number;denom:string;recipient:string;amount_raw:string;amount_fusd:string;memo:string;expires_at:number;status:string;notice:string};
 const BASE='/backend-proxy';
 let ACCESS_TOKEN='';
 export function setAccessToken(token:string){ACCESS_TOKEN=token;}
@@ -17,6 +17,9 @@ async function request<T>(path:string,init?:RequestInit):Promise<T>{
 const json=(body:unknown)=>({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} as RequestInit);
 export const api={
  health:()=>request<{status:string}>('/health'),
+ nativeBalance:(address:string,denom?:string)=>request<{address:string;denom:string;amount_raw:string;decimals:number;low_gas:boolean;faucet_url:string}>(`/api/v1/qorechain/native/balance/${encodeURIComponent(address)}${denom?'?denom='+encodeURIComponent(denom):''}`),
+ nativeChallenge:(address:string)=>request<{challenge_id:string;memo:string;amount:string;denom:string;expires_at:number}>('/api/v1/auth/native/challenge',json({address})),
+ nativeVerify:(address:string,challenge_id:string,tx_hash:string)=>request<{access_token:string;wallet:string}>('/api/v1/auth/native/verify',json({address,challenge_id,tx_hash})),
  challenge:(address:string)=>request<{challenge_id:string;message:string}>('/api/v1/auth/challenge',json({address})),
  verifyLogin:(address:string,challenge_id:string,signature:string)=>request<{access_token:string;wallet:string}>('/api/v1/auth/verify',json({address,challenge_id,signature})),
  listProjects:()=>request<{projects:Project[]}>('/api/v1/projects'),

@@ -18,6 +18,19 @@ class PasteInput(BaseModel):source:str=Field(min_length=1)
 class PlanInput(BaseModel):plan:str
 class VerifyTransfer(BaseModel):tx_hash:str
 
+@app.get('/api/v1/qorechain/native/balance/{address}')
+def native_balance(address:str,denom:str='uqor'):
+    if not auth.is_native(address):raise HTTPException(422,'Invalid QoreChain native address')
+    return chain.native_balance(address,denom)
+
+@app.post('/api/v1/auth/native/challenge')
+def create_native_challenge(payload:auth.ChallengeRequest):
+    return auth.native_challenge(payload.address)
+
+@app.post('/api/v1/auth/native/verify')
+def complete_native_challenge(payload:auth.NativeVerifyRequest):
+    return auth.verify_native(payload)
+
 @app.get('/health')
 def health():return {'status':'ok','service':'qoresentinel-backend'}
 
