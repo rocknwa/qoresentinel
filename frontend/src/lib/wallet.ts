@@ -17,7 +17,7 @@ export async function connectQoreX(): Promise<string> {
 export async function nativeSend(fromAddress: string, toAddress: string, denom: string, amount: string, memo: string) {
   if (!/^qor1[023456789acdefghjklmnpqrstuvwxyz]{38}$/.test(fromAddress) ||
       !/^qor1[023456789acdefghjklmnpqrstuvwxyz]{38}$/.test(toAddress) ||
-      !/^\d+$/.test(amount) || BigInt(amount) <= 0n || !denom || new TextEncoder().encode(memo).length > 256) {
+      !/^\d+$/.test(amount) || BigInt(amount) <= BigInt(0) || !denom || new TextEncoder().encode(memo).length > 256) {
     throw new Error('Invalid QoreChain native transaction details.');
   }
   const native = getQorexNative();
