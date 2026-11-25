@@ -101,7 +101,7 @@ def native_balance(address:str,denom:str='uqor')->dict:
         raise HTTPException(502,'Malformed balance from QoreChain') from exc
     return {'network':'qorechain-diana','address':address,'denom':denom,
         'amount_raw':str(amount),'decimals':6,'faucet_url':FAUCET_URL,
-        'low_gas':denom=='uqor' and amount<500_000}
+        'low_gas':denom=='uqor' and amount<10_000_000}
 
 def _verified_hybrid(record:dict)->bool:
     tr=record.get('tx_response') or {}

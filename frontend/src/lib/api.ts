@@ -1,5 +1,9 @@
 export type Project={id:string;name:string;files?:string[]};
-export type Audit={id:string;status:'queued'|'running'|'completed'|'failed';report_markdown:string;agents:unknown[];findings:unknown[];findings_status:string;completed_agents:number;total_agents:number;error?:string};
+export type AuditSummary={id:string;project_id:string;project_name:string;status:string;completed_agents:number;total_agents:number;created_at:string};
+export type AuditMessage={id:string;role:'user'|'assistant';body:string;created_at:string};
+export type ChainTx={tx_hash:string;kind:string;denom:string;amount_raw:string;status:string;created_at:string};
+export type ReportFinding={severity:string;title:string;evidence:string;source:string;verified:boolean};
+export type Audit={id:string;project_id:string;created_at?:string;status:'queued'|'running'|'completed'|'failed';report_markdown:string;agents:unknown[];findings:ReportFinding[];findings_status:string;completed_agents:number;total_agents:number;error?:string};
 export type PqcScan={status:string;method:string;components:number;evidence:Array<{file:string;line:number;algorithm:string;classification:string;excerpt:string;confidence:string}>;cbom:Record<string,unknown>;limitations:string};
 export type TxEvidence={found:boolean;tx_hash:string;network:string;success?:boolean;hybrid_layer_present?:boolean;chain_reports_verified?:boolean;height?:string;verification_method?:string};
 export type PaymentIntent={id:string;network:string;chain_id:number;currency:string;decimals:number;denom:string;recipient:string;amount_raw:string;amount_fusd:string;memo:string;expires_at:number;status:string;notice:string};
@@ -17,6 +21,11 @@ async function request<T>(path:string,init?:RequestInit):Promise<T>{
 const json=(body:unknown)=>({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} as RequestInit);
 export const api={
  health:()=>request<{status:string}>('/health'),
+ audits:(offset=0)=>request<{audits:AuditSummary[];has_more:boolean}>(`/api/v1/audits?limit=50&offset=${offset}`),
+ auditMessages:(id:string)=>request<{messages:AuditMessage[]}>(`/api/v1/audits/${encodeURIComponent(id)}/messages`),
+ auditQuestion:(id:string,question:string)=>request<{answer:string}>(`/api/v1/audits/${encodeURIComponent(id)}/messages`,json({question})),
+ transactions:(offset=0)=>request<{transactions:ChainTx[];has_more:boolean}>(`/api/v1/transactions?limit=50&offset=${offset}`),
+ registerHybrid:(tx_hash:string)=>request<{confirmed:boolean}>('/api/v1/transactions/hybrid-proof',json({tx_hash})),
  nativeBalance:(address:string,denom?:string)=>request<{address:string;denom:string;amount_raw:string;decimals:number;low_gas:boolean;faucet_url:string}>(`/api/v1/qorechain/native/balance/${encodeURIComponent(address)}${denom?'?denom='+encodeURIComponent(denom):''}`),
  nativeChallenge:(address:string)=>request<{challenge_id:string;memo:string;amount:string;denom:string;expires_at:number}>('/api/v1/auth/native/challenge',json({address})),
  nativeVerify:(address:string,challenge_id:string,tx_hash:string)=>request<{access_token:string;wallet:string}>('/api/v1/auth/native/verify',json({address,challenge_id,tx_hash})),

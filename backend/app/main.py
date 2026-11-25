@@ -3,12 +3,13 @@ import json
 import os
 from datetime import datetime,timedelta,timezone
 from concurrent.futures import ThreadPoolExecutor
-from fastapi import FastAPI,HTTPException,UploadFile,File,Depends,Request
+from fastapi import FastAPI,HTTPException,UploadFile,File,Depends,Request,Query
 from pydantic import BaseModel,Field
 from .auth import require_wallet,ChallengeRequest,VerifyRequest,challenge,verify
 from . import storage,auth,pqc,chain,payments
 from .ingestion import BadSource,ingest_files,ingest_paste,ingest_zip,as_http_error
 from .audit_service import analyze,EngineNotConfigured
+from .findings import extract_findings
 
 app=FastAPI(title='QoreSentinel API',version='0.2.0')
 EXECUTOR=ThreadPoolExecutor(max_workers=1,thread_name_prefix='qs-audit')
@@ -17,6 +18,7 @@ class ProjectCreate(BaseModel):name:str=Field(min_length=1,max_length=120)
 class PasteInput(BaseModel):source:str=Field(min_length=1)
 class PlanInput(BaseModel):plan:str
 class VerifyTransfer(BaseModel):tx_hash:str
+class TxRegistration(BaseModel):tx_hash:str
 
 @app.get('/api/v1/qorechain/native/balance/{address}')
 def native_balance(address:str,denom:str='uqor'):
@@ -42,6 +44,28 @@ def new_challenge(payload:ChallengeRequest,request:Request):
 
 @app.post('/api/v1/auth/verify')
 def verify_challenge(payload:VerifyRequest):return verify(payload)
+
+@app.get('/api/v1/audits')
+def audit_history(owner:str=Depends(require_wallet),
+                  limit:int=Query(50,ge=1,le=100),offset:int=Query(0,ge=0)):
+    return storage.list_all_audits(owner,limit,offset)
+
+@app.get('/api/v1/transactions')
+def transaction_history(owner:str=Depends(require_wallet),
+                        limit:int=Query(50,ge=1,le=100),offset:int=Query(0,ge=0)):
+    return storage.list_chain_transactions(owner,limit,offset)
+
+@app.post('/api/v1/transactions/hybrid-proof')
+def register_hybrid_proof(payload:TxRegistration,owner:str=Depends(require_wallet)):
+    if not auth.is_native(owner):raise HTTPException(422,'QoreX native authentication required')
+    result=chain.verify_native_send(
+        payload.tx_hash,owner,owner,'uqor',1,
+        'QoreSentinel hybrid-signature testnet proof',
+        confirmations=1,require_hybrid=True)
+    if not result['confirmed']:
+        raise HTTPException(409,'Hybrid proof transaction is awaiting confirmation')
+    storage.record_chain_transaction(owner,result['tx_hash'],'hybrid-proof','uqor','1')
+    return result
 
 @app.get('/api/v1/projects')
 def list_projects(owner:str=Depends(require_wallet)):return {'projects':storage.list_projects(owner)}
@@ -112,12 +136,33 @@ def start_audit(project_id:str,owner:str=Depends(require_wallet)):
 def get_audit(job_id:str,owner:str=Depends(require_wallet)):
     row=storage.get_job(job_id,owner)
     if not row:raise HTTPException(404,'Audit not found')
-    return {'id':row['id'],'project_id':row['project_id'],'status':row['status'],
+    return {'id':row['id'],'project_id':row['project_id'],'status':row['status'],'created_at':row['created_at'],
       'completed_agents':row['completed_agents'],'total_agents':row['total_agents'],
       'report_markdown':row['report'] if row['status']=='completed' else '',
       'agents':json.loads(row['agent_results']) if row['status']=='completed' else [],
-      'findings':[],'findings_status':'structured_parsing_not_implemented',
+      'findings':extract_findings(row['report']) if row['status']=='completed' else [],
+      'findings_status':'report_extracted_unverified',
       'error':row['error']}
+
+@app.get('/api/v1/audits/{job_id}/messages')
+def audit_conversation(job_id:str,owner:str=Depends(require_wallet)):
+    messages=storage.audit_message_history(job_id,owner)
+    if messages is None:raise HTTPException(404,'Audit not found')
+    return {'messages':messages}
+
+class AuditQuestion(BaseModel):
+    question:str=Field(min_length=1,max_length=2000)
+
+@app.post('/api/v1/audits/{job_id}/messages')
+def audit_conversation_question(job_id:str,payload:AuditQuestion,owner:str=Depends(require_wallet)):
+    row=storage.get_job(job_id,owner)
+    if not row:raise HTTPException(404,'Audit not found')
+    if row['status']!='completed':raise HTTPException(409,'Audit must finish before discussion')
+    from .assistant import answer
+    result=answer(row['project_id'],owner,payload.question,audit_id=job_id)
+    if not storage.append_audit_exchange(job_id,owner,payload.question,result['answer']):
+        raise HTTPException(409,'Could not append audit discussion')
+    return result
 
 @app.post('/api/v1/projects/{project_id}/pqc/scan')
 def scan_pqc(project_id:str,owner:str=Depends(require_wallet)):

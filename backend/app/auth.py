@@ -54,6 +54,7 @@ def verify_native(payload:NativeVerifyRequest):
         raise HTTPException(409,'Login transaction is not confirmed yet; retry verification shortly')
     if storage.consume_challenge(payload.challenge_id,payload.address,int(time.time()))!=memo:
         raise HTTPException(401,'Login challenge expired or already used')
+    storage.record_chain_transaction(payload.address,payload.tx_hash,'login','uqor','1')
     import jwt
     now=int(time.time())
     token=jwt.encode({'sub':payload.address,'iat':now,'exp':now+3600,'iss':'qoresentinel'},
