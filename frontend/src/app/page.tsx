@@ -42,6 +42,8 @@ export default function Home(){
  const [subscription,setSubscription]=useState<{plan:string;expires_at:number|null}|null>(null);
  const [question,setQuestion]=useState('');const [assistantAnswer,setAssistantAnswer]=useState('');
  const [allAudits,setAllAudits]=useState<AuditSummary[]>([]);
+ const [moreAudits,setMoreAudits]=useState(false);
+ const [moreTransactions,setMoreTransactions]=useState(false);
  const [transactions,setTransactions]=useState<ChainTx[]>([]);
  const [auditMessages,setAuditMessages]=useState<AuditMessage[]>([]);
  const [auditQuestion,setAuditQuestion]=useState('');
@@ -51,11 +53,11 @@ export default function Home(){
  const [loadHistoryError,setLoadHistoryError]=useState('');
  function refreshAuditHistory(){
    if(!signedIn)return;
-   api.audits().then(x=>setAllAudits(x.audits)).catch(e=>setLoadHistoryError(e instanceof Error?e.message:'Could not load audits'));
+   api.audits().then(x=>{setAllAudits(x.audits);setMoreAudits(x.has_more)}).catch(e=>setLoadHistoryError(e instanceof Error?e.message:'Could not load audits'));
  }
  function refreshTransactions(){
    if(!signedIn)return;
-   api.transactions().then(x=>setTransactions(x.transactions)).catch(e=>setLoadHistoryError(e instanceof Error?e.message:'Could not load transactions'));
+   api.transactions().then(x=>{setTransactions(x.transactions);setMoreTransactions(x.has_more)}).catch(e=>setLoadHistoryError(e instanceof Error?e.message:'Could not load transactions'));
  }
  async function openAudit(jobId:string){
    if(!signedIn)return;
@@ -81,13 +83,25 @@ export default function Home(){
    }catch(e){setError(e instanceof Error?e.message:'Could not save audit discussion');}
    finally{setChatBusy(false);}
  }
+ async function loadMoreAudits(){
+   if(loadingHistory)return;setLoadingHistory(true);
+   try{const page=await api.audits(allAudits.length);setAllAudits(prev=>[...prev,...page.audits]);setMoreAudits(page.has_more);}
+   catch(e){setLoadHistoryError(e instanceof Error?e.message:'Could not load more audits');}
+   finally{setLoadingHistory(false);}
+ }
+ async function loadMoreTransactions(){
+   if(loadingHistory)return;setLoadingHistory(true);
+   try{const page=await api.transactions(transactions.length);setTransactions(prev=>[...prev,...page.transactions]);setMoreTransactions(page.has_more);}
+   catch(e){setLoadHistoryError(e instanceof Error?e.message:'Could not load more transactions');}
+   finally{setLoadingHistory(false);}
+ }
  function afterLogin(token:string){
    setAccessToken(token);setSignedIn(true);setPendingLogin(null);setNeedsFaucet(false);
    setNotice('QoreX native wallet authenticated on Diana testnet.');
    api.subscription().then(setSubscription).catch(()=>{});
    api.listProjects().then(x=>setRecentProjects(x.projects)).catch(()=>{});
-   api.audits().then(x=>setAllAudits(x.audits)).catch(()=>{});
-   api.transactions().then(x=>setTransactions(x.transactions)).catch(()=>{});
+   api.audits().then(x=>{setAllAudits(x.audits);setMoreAudits(x.has_more)}).catch(()=>{});
+   api.transactions().then(x=>{setTransactions(x.transactions);setMoreTransactions(x.has_more)}).catch(()=>{});
  }
  async function refreshGas(address:string){
    const balance=await api.nativeBalance(address);
@@ -122,12 +136,12 @@ export default function Home(){
  function logout(){setSignedIn(false);setNativeAddress('');setGasBalance(null);setPendingLogin(null);
    setNeedsFaucet(false);setAccessToken('');setSubscription(null);setRecentProjects([]);
    setProject(null);setAudit(null);setPqcScan(null);setPaymentIntent(null);setPaymentHash('');
-   setAllAudits([]);setTransactions([]);setAuditMessages([]);setSelectedAuditId('');}
+   setAllAudits([]);setTransactions([]);setMoreAudits(false);setMoreTransactions(false);setAuditMessages([]);setSelectedAuditId('');}
  useEffect(()=>{if(!jobId||!signedIn)return;
    let closed=false;
    const poll=async()=>{try{const status=await api.audit(jobId);if(closed)return;
      setAgentDone(status.completed_agents);
-     if(status.status==='completed'){setAudit(status);setSelectedAuditId(status.id);setAuditMessages([]);setBusy(false);setJobId('');setView('audit-results');api.audits().then(x=>setAllAudits(x.audits)).catch(()=>{});}
+     if(status.status==='completed'){setAudit(status);setSelectedAuditId(status.id);setAuditMessages([]);setBusy(false);setJobId('');setView('audit-results');api.audits().then(x=>{setAllAudits(x.audits);setMoreAudits(x.has_more)}).catch(()=>{});}
      if(status.status==='failed'){setBusy(false);setJobId('');setError(status.error||'Audit failed.');}
    }catch(e){if(!closed){setBusy(false);setJobId('');setError(e instanceof Error?e.message:'Audit status unavailable');}}};
    void poll();const ticker=setInterval(poll,4000);return()=>{closed=true;clearInterval(ticker)};
@@ -142,7 +156,7 @@ export default function Home(){
     setHybridSendStatus(`Wallet broadcast: ${proof.shield}`);setTxHash(proof.txHash);
     setTxEvidence(await api.inspectTx(proof.txHash));
     await api.registerHybrid(proof.txHash);
-    api.transactions().then(x=>setTransactions(x.transactions)).catch(()=>{});
+    api.transactions().then(x=>{setTransactions(x.transactions);setMoreTransactions(x.has_more)}).catch(()=>{});
   }catch(e){setError(e instanceof Error?e.message:'Hybrid proof transaction failed');}
   finally{setBusy(false);}}
  async function inspectTx(){if(!txHash.trim())return;setBusy(true);setError('');
@@ -209,12 +223,14 @@ export default function Home(){
  <Status tone={item.status==='completed'?'good':item.status==='failed'?'warn':'cyan'}>{item.status}</Status>
  <button className="secondary" disabled={loadingHistory} onClick={()=>openAudit(item.id)}>{item.status==='completed'?'Open report & discussion':'View audit'} <ArrowRight size={14}/></button>
  </div>)}</div>}
+ {moreAudits&&<button className="secondary history-load-more" disabled={loadingHistory} onClick={loadMoreAudits}>Load more audits</button>}
  </section></>}
  {view==='transaction-history'&&<><Header kicker="WALLET / ACTIVITY" title="Transaction history" sub="Confirmed QoreSentinel login, hybrid-proof, and subscription transactions linked to this wallet." action={<button className="secondary" onClick={refreshTransactions}><RefreshCcw size={15}/> Refresh</button>}/>
  {loadHistoryError&&<div role="alert" className="alert">{loadHistoryError}</div>}
  <section className="panel"><div className="panel-head"><h2>Verified on-chain activity</h2><Status tone="cyan">{transactions.length} records</Status></div>
  {!signedIn?<Empty icon={Wallet} title="Wallet authentication required" desc="Connect QoreX to view app transaction history."/>:!transactions.length?<Empty icon={Activity} title="No verified activity" desc="Verified logins, hybrid proofs, and subscription transfers will appear here. Older wallet transfers are not imported."/>:
  <div className="history-list">{transactions.map(tx=><div className="history-item" key={tx.kind+tx.tx_hash}><div><strong>{tx.kind==='login'?'Wallet authentication':tx.kind==='hybrid-proof'?'Hybrid-signature proof':tx.kind==='subscription'?'Subscription payment':tx.kind}</strong><p>{new Date(tx.created_at).toLocaleString()} · {tx.denom} · {tx.amount_raw} base units</p><p className="tx-hash">{tx.tx_hash}</p></div><Status tone="good">{tx.status}</Status><button className="secondary" onClick={()=>navigator.clipboard.writeText(tx.tx_hash)}>Copy hash</button></div>)}</div>}
+ {moreTransactions&&<button className="secondary history-load-more" disabled={loadingHistory} onClick={loadMoreTransactions}>Load more transactions</button>}
  </section></>}
  {view==='new-audit'&&<><Header kicker="SECURITY / NEW AUDIT" title="Submit smart contract for audit" sub="Inspect Solidity source with QoreSentinel's specialist auditing workflow."/><div className="audit-grid"><section className="panel"><div className="panel-head"><div><span className="eyebrow">01 / PROJECT DETAILS</span><h2>Submission Workspace</h2></div><Status tone="cyan">SOLIDITY</Status></div><label className="field-label" htmlFor="project-name">Project name</label><input id="project-name" className="field" value={projectName} onChange={e=>setProjectName(e.target.value)} maxLength={120} placeholder="e.g. My DeFi Protocol"/><div className="section-separator"/><div className="tab-row"><button className={mode==='paste'?'selected':''} onClick={()=>setMode('paste')}><Code2 size={16}/> Paste source</button><button className={mode==='upload'?'selected':''} onClick={()=>setMode('upload')}><Upload size={16}/> Upload files / ZIP</button></div>{mode==='paste'?<><div className="editor-toolbar"><span><FileCode2 size={14}/> Contract.sol</span><Status>Solidity</Status></div><textarea spellCheck={false} className="code-editor" aria-label="Solidity source code" value={source} onChange={e=>setSource(e.target.value)}/><p className="help-text">Source code is sent to your configured backend for analysis. Do not submit secrets or private keys.</p></>:<><input ref={fileRef} type="file" accept=".sol,.zip" multiple hidden onChange={e=>setFiles(Array.from(e.target.files||[]))}/><button className="upload-box" onClick={()=>fileRef.current?.click()}><CloudUpload size={32}/><strong>Choose Solidity files or ZIP project</strong><span>Supports .sol files or one .zip archive (submitted separately)</span></button><div className="file-list">{files.length?files.map((f,i)=><div key={i}><FileText size={15}/><span>{f.name}</span><button aria-label={`Remove ${f.name}`} onClick={()=>setFiles(files.filter((_,j)=>i!==j))}><X size={15}/></button></div>):<span>No files selected</span>}</div></> }</section><aside className="panel right-panel"><div className="panel-head"><div><span className="eyebrow">02 / AUDIT CONFIGURATION</span><h2>Analysis Settings</h2></div></div><div className="settings-option"><ShieldCheck size={20}/><div><strong>12 specialist agents</strong><p>Parallel vulnerability investigation with final judge consolidation.</p></div><Status tone="cyan">ENGINE</Status></div><div className="settings-option"><LockKeyhole size={20}/><div><strong>Private source handling</strong><p>Runs through your backend; credentials must stay server-side.</p></div></div><div className="settings-option"><FileSearch size={20}/><div><strong>Evidence-first reporting</strong><p>Agent responses are consolidated into a report with source attribution where supported.</p></div></div><button disabled={busy||!signedIn||!projectName.trim()||(mode==='paste'?!source.trim():!files.length)} className="primary full" onClick={submitAudit}>{busy?'Preparing audit...':signedIn?'Initiate Security Audit':'Sign in to start audit'} <ArrowRight size={16}/></button></aside></div></>}
  {view==='audit-progress'&&<><Header kicker="SECURITY / AUDIT IN PROGRESS" title="Multi-agent audit pipeline" sub="Follow your queued audit through the specialist pipeline and final report."/><section className="panel"><div className="panel-head"><div><span className="eyebrow">EXECUTION STATUS</span><h2>{busy?'Analyzing source files…':audit?'Audit completed':'No active audit'}</h2></div><Status tone={busy?'cyan':'neutral'}>{busy?'RUNNING':audit?'COMPLETE':'IDLE'}</Status></div>{error&&<div role="alert" className="alert"><CircleAlert size={17}/>{error}</div>}{notice&&<div className="info-note"><Activity size={17}/>{notice}</div>}<div className="agent-grid">{agentNames.map((name,i)=><div key={name} className="agent-tile"><span className="agent-index">{String(i+1).padStart(2,'0')}</span><Shield size={16}/><div><strong>{name}</strong><small>{busy?(i<agentDone?'Completed':i===agentDone?'Analyzing':'Queued'):'Not running'}</small></div><span className={`tiny-dot ${busy?'pulse':''}`}/></div>)}</div><div className="judge-row"><Sparkles size={18}/><div><strong>Final judge & report synthesis</strong><p>Deduplicates agent findings when the configured engine finishes</p></div><Status>{busy?`${agentDone}/12 specialists done`:'Not running'}</Status></div>{!busy&&<button className="secondary" onClick={()=>navigate('new-audit')}><Plus size={16}/> Start new audit</button>}</section></>}
