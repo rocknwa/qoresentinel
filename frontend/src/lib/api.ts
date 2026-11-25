@@ -1,17 +1,35 @@
-export type Project = {id:string;name:string;files?:string[]};
-export type Audit = {status:string;report_markdown:string;agents:unknown;findings:unknown[];findings_status:string};
-const API_URL = '/backend-proxy';
-async function request<T>(path:string, init?:RequestInit):Promise<T> {
-  let response:Response;
-  try {response = await fetch(`${API_URL}${path}`,{...init,cache:'no-store'});} catch {throw new Error('Backend unavailable. Start FastAPI and check NEXT_PUBLIC_API_URL.');}
-  if(!response.ok){let message = `Request failed (${response.status})`;try{const data = await response.json();message = typeof data.detail === 'string' ? data.detail : message;}catch{}throw new Error(message);}
-  return response.json() as Promise<T>;
+export type Project={id:string;name:string;files?:string[]};
+export type Audit={id:string;status:'queued'|'running'|'completed'|'failed';report_markdown:string;agents:unknown[];findings:unknown[];findings_status:string;completed_agents:number;total_agents:number;error?:string};
+export type PqcScan={status:string;method:string;components:number;evidence:Array<{file:string;line:number;algorithm:string;classification:string;excerpt:string;confidence:string}>;cbom:Record<string,unknown>;limitations:string};
+export type TxEvidence={found:boolean;tx_hash:string;network:string;success?:boolean;hybrid_layer_present?:boolean;chain_reports_verified?:boolean;height?:string;verification_method?:string};
+export type PaymentIntent={id:string;network:string;chain_id:number;currency:string;decimals:number;token:string;recipient:string;amount_raw:string;amount_fusd:string;expires_at:number;status:string;notice:string};
+const BASE='/backend-proxy';
+let ACCESS_TOKEN='';
+export function setAccessToken(token:string){ACCESS_TOKEN=token;}
+async function request<T>(path:string,init?:RequestInit):Promise<T>{
+ const headers=new Headers(init?.headers);
+ if(ACCESS_TOKEN)headers.set('Authorization',`Bearer ${ACCESS_TOKEN}`);
+ let response:Response;
+ try{response=await fetch(`${BASE}${path}`,{...init,headers,cache:'no-store'});}catch{throw new Error('The security service is temporarily unreachable.');}
+ if(!response.ok){let reason=`Request failed (${response.status})`;try{const data=await response.json();if(typeof data.detail==='string')reason=data.detail;}catch{}throw new Error(reason);}
+ return response.json() as Promise<T>;
 }
-export const api = {
-  health:()=>request<{status:string}>('/health'),
-  createProject:(name:string)=>request<Project>('/api/v1/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})}),
-  getProject:(id:string)=>request<Project>(`/api/v1/projects/${encodeURIComponent(id)}`),
-  pasteSource:(id:string,source:string)=>request<{files:string[]}>(`/api/v1/projects/${encodeURIComponent(id)}/source`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source})}),
-  upload:(id:string,files:File[])=>{const data = new FormData();files.forEach(file=>data.append('files',file));return request<{files:string[]}>(`/api/v1/projects/${encodeURIComponent(id)}/files`,{method:'POST',body:data});},
-  runAudit:(id:string)=>request<Audit>(`/api/v1/projects/${encodeURIComponent(id)}/audits`,{method:'POST'})
+const json=(body:unknown)=>({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} as RequestInit);
+export const api={
+ health:()=>request<{status:string}>('/health'),
+ challenge:(address:string)=>request<{challenge_id:string;message:string}>('/api/v1/auth/challenge',json({address})),
+ verifyLogin:(address:string,challenge_id:string,signature:string)=>request<{access_token:string;wallet:string}>('/api/v1/auth/verify',json({address,challenge_id,signature})),
+ listProjects:()=>request<{projects:Project[]}>('/api/v1/projects'),
+ createProject:(name:string)=>request<Project>('/api/v1/projects',json({name})),
+ getProject:(id:string)=>request<Project>(`/api/v1/projects/${encodeURIComponent(id)}`),
+ pasteSource:(id:string,source:string)=>request<{files:string[]}>(`/api/v1/projects/${encodeURIComponent(id)}/source`,json({source})),
+ upload:(id:string,files:File[])=>{const data=new FormData();files.forEach(file=>data.append('files',file));return request<{files:string[]}>(`/api/v1/projects/${encodeURIComponent(id)}/files`,{method:'POST',body:data});},
+ runAudit:(id:string)=>request<Audit>(`/api/v1/projects/${encodeURIComponent(id)}/audits`,{method:'POST'}),
+ audit:(id:string)=>request<Audit>(`/api/v1/audits/${encodeURIComponent(id)}`),
+ pqc:(id:string)=>request<PqcScan>(`/api/v1/projects/${encodeURIComponent(id)}/pqc/scan`,{method:'POST'}),
+ inspectTx:(hash:string)=>request<TxEvidence>(`/api/v1/qorechain/transactions/${encodeURIComponent(hash)}`),
+ subscription:()=>request<{plan:string;expires_at:number|null;active:boolean}>('/api/v1/subscriptions/me'),
+ intent:(plan:string)=>request<PaymentIntent>('/api/v1/payments/intents',json({plan})),
+ verifyPayment:(id:string,tx_hash:string)=>request<{status:string;tx_hash?:string;reason?:string;confirmations?:number;required?:number}> (`/api/v1/payments/intents/${encodeURIComponent(id)}/verify`,json({tx_hash})),
+ ask:(project_id:string,question:string)=>request<{answer:string;validation:string}>(`/api/v1/projects/${encodeURIComponent(project_id)}/assistant`,json({question})),
 };
