@@ -135,3 +135,44 @@ def test_native_address_checksum_validation():
     assert not is_native(TEST_WALLET[:-1]+'x')
     assert not is_native('qor1'+'a'*38)
     assert not is_native('0x'+'a'*40)
+
+
+def test_native_inspector_accepts_qorex_hash_without_prefix(monkeypatch):
+    from app import chain
+    canonical='A1B2'*16
+    called=[]
+    class FakeResponse:
+        status_code=200
+        def raise_for_status(self):pass
+        def json(self):
+            return {'tx_response':{'code':0,'height':'300',
+                'events':[{'type':'pqc_hybrid_verify',
+                           'attributes':[{'key':'status','value':'verified'}]}]},
+                'tx':{'body':{'extension_options':[{'@type':'/qorechain.pqc.v1.PQCHybridSignature'}]}}}
+    def fake_get(url,**kw):
+        called.append(url)
+        return FakeResponse()
+    monkeypatch.setattr(chain.requests,'get',fake_get)
+    for candidate in (canonical,canonical.lower(),'0x'+canonical.lower(),'0X'+canonical):
+        evidence=chain.transaction_evidence(candidate)
+        assert evidence['found'] and evidence['chain_reports_verified']
+        assert evidence['tx_hash']==canonical
+        assert called[-1].endswith('/cosmos/tx/v1beta1/txs/'+canonical)
+
+def test_native_inspector_rejects_bad_hash_without_rpc(monkeypatch):
+    from app import chain
+    called=[]
+    monkeypatch.setattr(chain.requests,'get',lambda *a,**k:called.append(a))
+    for candidate in ('abc','0x123','0x'+'g'*64,'0x'+'a'*63):
+        with pytest.raises(HTTPException) as err:chain.transaction_evidence(candidate)
+        assert err.value.status_code==422
+    assert called==[]
+
+def test_native_inspector_not_indexed_is_not_a_failed_broadcast(monkeypatch):
+    from app import chain
+    class Missing:
+        status_code=404
+    monkeypatch.setattr(chain.requests,'get',lambda *a,**k:Missing())
+    evidence=chain.transaction_evidence('f'*64)
+    assert evidence['found'] is False
+    assert evidence['tx_hash']=='F'*64

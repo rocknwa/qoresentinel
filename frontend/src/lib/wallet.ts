@@ -33,7 +33,11 @@ export async function nativeSend(fromAddress: string, toAddress: string, denom: 
     memo
   });
   if (Number(result.code) !== 0) throw new Error('The native transaction was not successful.');
-  return { txHash: String(result.txHash), shield: String(result.shield) };
+  const txHash = String(result.txHash ?? '').trim().replace(/^0x/i, '').toUpperCase();
+  if (!/^[0-9A-F]{64}$/.test(txHash)) {
+    throw new Error('QoreX broadcast the transaction but returned an unexpected hash. Check wallet activity before sending another transaction.');
+  }
+  return { txHash, shield: String(result.shield) };
 }
 
 export async function loginProof(address: string, memo: string) {
