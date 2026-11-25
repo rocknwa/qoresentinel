@@ -35,7 +35,7 @@ audit_jobs = Table('audit_jobs', metadata,
 intents = Table('payment_intents', metadata,
     Column('id', String(40), primary_key=True), Column('wallet', String(42), nullable=False),
     Column('plan', String(30), nullable=False), Column('amount_raw', String(40), nullable=False),
-    Column('token', String(42), nullable=False), Column('treasury', String(42), nullable=False),
+    Column('token', String(96), nullable=False), Column('treasury', String(42), nullable=False),
     Column('status', String(20), nullable=False), Column('tx_hash', String(70), nullable=True),
     Column('expires_at', Integer, nullable=False), Column('created_at', String(35), nullable=False),
     UniqueConstraint('tx_hash', name='uq_payment_tx_hash'))
@@ -98,6 +98,11 @@ def store_challenge(wallet:str,message:str,expiry:int):
     with engine().begin() as c:c.execute(insert(challenges).values(**with_values))
     return id
 
+def peek_challenge(id:str,wallet:str,now:int):
+    row=_one(challenges,'id',id,challenges.c.wallet==wallet.lower())
+    if not row or row['used'] or row['expires_at']<now:return None
+    return row['message']
+
 def consume_challenge(id:str,wallet:str,now:int):
     with engine().begin() as c:
         row=c.execute(select(challenges).where(challenges.c.id==id)).mappings().first()
@@ -116,7 +121,7 @@ def set_job(job_id:str,**values):
     with engine().begin() as c:c.execute(update(audit_jobs).where(audit_jobs.c.id==job_id).values(**values))
 
 def create_intent(wallet:str,plan:str,amount_raw:int,token:str,treasury:str,expires:int):
-    data={'id':str(uuid.uuid4()),'wallet':wallet.lower(),'plan':plan,'amount_raw':str(amount_raw),'token':token.lower(),'treasury':treasury.lower(),'status':'pending','tx_hash':None,'expires_at':expires,'created_at':iso_now()}
+    data={'id':str(uuid.uuid4()),'wallet':wallet.lower(),'plan':plan,'amount_raw':str(amount_raw),'token':token,'treasury':treasury.lower(),'status':'pending','tx_hash':None,'expires_at':expires,'created_at':iso_now()}
     with engine().begin() as c:c.execute(insert(intents).values(**data))
     return data
 
