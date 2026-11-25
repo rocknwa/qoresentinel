@@ -1,19 +1,19 @@
+import { getQorexNative } from '@qorechain/qorex-types';
+
 /* QoreX Native supports read/connect + wallet-approved hybrid native transactions.
    QoreX EVM currently does NOT support personal_sign or eth_sendTransaction.
    For fUSD ERC-20 checkout use a compatible EVM wallet on Diana testnet. */
 export type Eip1193={request:(args:{method:string;params?:unknown[]|object})=>Promise<unknown>;
   on?:(event:string,fn:(...args:unknown[])=>void)=>void};
-export type QoreNative={enable?:(chainId:string)=>Promise<unknown>;getKey:(chainId:string)=>Promise<{bech32Address:string}>;
-  signAndBroadcast?:(...args:unknown[])=>Promise<unknown>};
-declare global{interface Window{ethereum?:Eip1193;qorex?:{native?:QoreNative;evm?:Eip1193}}}
+declare global { interface Window { ethereum?: Eip1193 } }
 export const DIANA_CHAIN='0x2648';
 export function getEvm():Eip1193|null{
   // MetaMask is preferable for fUSD payments, since QoreX EVM signing is unsupported.
-  if(window.ethereum)return window.ethereum;
-  return window.qorex?.evm||null;
+  if(typeof window==='undefined')return null;
+  return window.ethereum||null;
 }
 export async function connectQoreX():Promise<string>{
-  const native=window.qorex?.native;
+  const native=getQorexNative();
   if(!native)throw new Error('QoreX native wallet was not detected. Unlock its extension and select Diana testnet.');
   if(native.enable)await native.enable('qorechain-diana');
   const key=await native.getKey('qorechain-diana');
@@ -29,7 +29,6 @@ export async function connectEvm():Promise<{provider:Eip1193;address:string}>{
     try{await provider.request({method:'wallet_switchEthereumChain',params:[{chainId:DIANA_CHAIN}]});}
     catch{
       // EIP-3085: offer MetaMask users a trusted QoreChain Diana configuration.
-      if(provider===window.qorex?.evm)throw new Error('QoreX EVM cannot sign or send; use MetaMask for fUSD payments.');
       try{await provider.request({method:'wallet_addEthereumChain',params:[{
         chainId:DIANA_CHAIN,chainName:'QoreChain Diana Testnet',
         nativeCurrency:{name:'QOR',symbol:'QOR',decimals:18},
