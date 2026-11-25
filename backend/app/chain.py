@@ -22,10 +22,12 @@ def rpc(method,params=None):
         raise HTTPException(502,'QoreChain testnet RPC unavailable') from exc
 
 def transaction_evidence(tx_hash:str):
-    if not re.fullmatch(r'0x[a-fA-F0-9]{64}',tx_hash):raise HTTPException(422,'Invalid transaction hash')
+    # QoreX returns native transaction IDs as 64 hex digits without 0x.
+    # Accept both forms but query Cosmos by the uppercase native ID.
+    native_hash=_tx_hash(tx_hash).upper()
     try:
-        resp=requests.get(f'{REST}/cosmos/tx/v1beta1/txs/{tx_hash.removeprefix("0x")}',timeout=12)
-        if resp.status_code==404:return {'found':False,'network':'qorechain-diana','tx_hash':tx_hash}
+        resp=requests.get(f'{REST}/cosmos/tx/v1beta1/txs/{native_hash}',timeout=12)
+        if resp.status_code==404:return {'found':False,'network':'qorechain-diana','tx_hash':native_hash}
         resp.raise_for_status();body=resp.json()
         tr=body.get('tx_response') or {};tx=body.get('tx') or {}
         txbody=tx.get('body') or {}
@@ -44,7 +46,7 @@ def transaction_evidence(tx_hash:str):
                         except (ValueError,UnicodeDecodeError):pass
                     if key=='status' and value=='verified':verified_event=True
         success=str(tr.get('code',''))=='0'
-        return {'found':True,'network':'qorechain-diana','tx_hash':tx_hash,'success':success,
+        return {'found':True,'network':'qorechain-diana','tx_hash':native_hash,'success':success,
            'hybrid_layer_present':has_layer,'chain_reports_verified':success and has_layer and verified_event,'height':tr.get('height'),
            'verification_method':'chain-reported evidence (not independent local ML-DSA verification)'}
     except (requests.RequestException,ValueError) as exc:raise HTTPException(502,'Could not retrieve QoreChain transaction evidence') from exc
@@ -75,9 +77,9 @@ FUSD_DENOM='erc20:0x97143B771D34ddb9130b807b135Ae675A5a963CA'
 FAUCET_URL='https://dashboard.qorechain.io/faucet'
 
 def _tx_hash(value:str)->str:
-    if not isinstance(value,str) or not re.fullmatch(r'(?:0x)?[a-fA-F0-9]{64}',value):
+    if not isinstance(value,str) or not re.fullmatch(r'(?:0[xX])?[a-fA-F0-9]{64}',value):
         raise HTTPException(422,'Invalid native transaction hash')
-    return value.removeprefix('0x').lower()
+    return value[2:].lower() if value[:2].lower()=='0x' else value.lower()
 
 def _rest_get(path:str,*,params:dict|None=None)->dict|None:
     try:
@@ -101,7 +103,7 @@ def native_balance(address:str,denom:str='uqor')->dict:
         raise HTTPException(502,'Malformed balance from QoreChain') from exc
     return {'network':'qorechain-diana','address':address,'denom':denom,
         'amount_raw':str(amount),'decimals':6,'faucet_url':FAUCET_URL,
-        'low_gas':denom=='uqor' and amount<500_000}
+        'low_gas':denom=='uqor' and amount<10_000_000}
 
 def _verified_hybrid(record:dict)->bool:
     tr=record.get('tx_response') or {}
@@ -127,7 +129,7 @@ def verify_native_send(tx_hash:str,sender:str,recipient:str,denom:str,
                        require_hybrid:bool=True)->dict:
     """Validate a native bank transfer before granting any authenticated access."""
     hash_value=_tx_hash(tx_hash)
-    record=_rest_get(f'/cosmos/tx/v1beta1/txs/{hash_value}')
+    record=_rest_get(f'/cosmos/tx/v1beta1/txs/{hash_value.upper()}')
     if record is None:return {'confirmed':False,'reason':'transaction-not-indexed'}
     tr=record.get('tx_response') or {}
     tx=record.get('tx') or {}

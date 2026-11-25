@@ -43,6 +43,25 @@ subscriptions = Table('subscriptions', metadata,
     Column('wallet', String(42), primary_key=True), Column('plan', String(30), nullable=False),
     Column('expires_at', Integer, nullable=False), Column('credited_intent', String(40), nullable=False))
 
+audit_messages = Table('audit_messages', metadata,
+    Column('id', String(40), primary_key=True),
+    Column('job_id', String(40), nullable=False),
+    Column('owner', String(42), nullable=False),
+    Column('role', String(16), nullable=False),
+    Column('body', Text, nullable=False),
+    Column('created_at', String(35), nullable=False))
+chain_transactions = Table('chain_transactions', metadata,
+    Column('id', String(40), primary_key=True),
+    Column('tx_hash', String(70), nullable=False),
+    Column('owner', String(42), nullable=False),
+    Column('kind', String(32), nullable=False),
+    Column('denom', String(96), nullable=False),
+    Column('amount_raw', String(64), nullable=False),
+    Column('status', String(20), nullable=False),
+    Column('created_at', String(35), nullable=False),
+    UniqueConstraint('tx_hash','kind',name='uq_chain_transaction_kind'))
+
+
 def iso_now(): return datetime.now(timezone.utc).isoformat()
 
 def engine():
@@ -164,3 +183,69 @@ def recent_jobs(project_id:str,owner:str):
     with engine().connect() as c:
         rows=c.execute(select(audit_jobs.c.id,audit_jobs.c.status,audit_jobs.c.created_at).where((audit_jobs.c.project_id==project_id)&(audit_jobs.c.owner==owner.lower())).order_by(audit_jobs.c.created_at.desc()).limit(10)).mappings().all()
     return [dict(r) for r in rows]
+
+
+def list_all_audits(owner:str,limit:int=50,offset:int=0):
+    """Wallet-scoped audit index; completed report bodies are retrieved separately."""
+    stmt=(select(audit_jobs.c.id,audit_jobs.c.project_id,projects.c.name.label('project_name'),
+                 audit_jobs.c.status,audit_jobs.c.completed_agents,audit_jobs.c.total_agents,
+                 audit_jobs.c.created_at)
+          .join(projects,projects.c.id==audit_jobs.c.project_id)
+          .where((audit_jobs.c.owner==owner.lower())&(projects.c.owner==owner.lower()))
+          .order_by(audit_jobs.c.created_at.desc(),audit_jobs.c.id.desc())
+          .limit(limit+1).offset(offset))
+    with engine().connect() as conn:
+        rows=[dict(row) for row in conn.execute(stmt).mappings().all()]
+    return {'audits':rows[:limit],'has_more':len(rows)>limit}
+
+
+def audit_message_history(job_id:str,owner:str,limit:int=100):
+    """Return messages only when the audit belongs to the requesting wallet."""
+    if not get_job(job_id,owner):return None
+    stmt=(select(audit_messages.c.id,audit_messages.c.role,audit_messages.c.body,audit_messages.c.created_at)
+          .where((audit_messages.c.job_id==job_id)&(audit_messages.c.owner==owner.lower()))
+          .order_by(audit_messages.c.created_at.desc(),audit_messages.c.id.desc()).limit(limit))
+    with engine().connect() as conn:rows=[dict(row) for row in conn.execute(stmt).mappings().all()]
+    return list(reversed(rows))
+
+
+def append_audit_exchange(job_id:str,owner:str,question:str,response:str):
+    """Persist a complete Q&A pair against one completed, wallet-owned audit."""
+    now=datetime.now(timezone.utc)
+    with engine().begin() as conn:
+        job=conn.execute(select(audit_jobs.c.status).where(
+            (audit_jobs.c.id==job_id)&(audit_jobs.c.owner==owner.lower()))).first()
+        if not job or job[0]!='completed':return False
+        for i,(role,body) in enumerate((('user',question),('assistant',response))):
+            from datetime import timedelta
+            conn.execute(insert(audit_messages).values(
+                id=str(uuid.uuid4()),job_id=job_id,owner=owner.lower(),role=role,body=body,
+                created_at=(now+timedelta(microseconds=i)).isoformat()))
+    return True
+
+
+def record_chain_transaction(owner:str,tx_hash:str,kind:str,denom:str,amount_raw:str):
+    """Idempotent ledger for on-chain verified QoreSentinel transactions."""
+    from sqlalchemy.exc import IntegrityError
+    tx_hash='0x'+tx_hash.lower().removeprefix('0x')
+    with engine().begin() as conn:
+        if conn.execute(select(chain_transactions.c.id).where(
+            (chain_transactions.c.tx_hash==tx_hash)&(chain_transactions.c.kind==kind))).first():
+            return False
+        try:
+            with conn.begin_nested():
+                conn.execute(insert(chain_transactions).values(
+                    id=str(uuid.uuid4()),owner=owner.lower(),tx_hash=tx_hash,kind=kind,
+                    denom=denom,amount_raw=str(amount_raw),status='confirmed',created_at=iso_now()))
+        except IntegrityError:return False
+    return True
+
+
+def list_chain_transactions(owner:str,limit:int=50,offset:int=0):
+    stmt=(select(chain_transactions.c.tx_hash,chain_transactions.c.kind,chain_transactions.c.denom,
+                 chain_transactions.c.amount_raw,chain_transactions.c.status,chain_transactions.c.created_at)
+          .where(chain_transactions.c.owner==owner.lower())
+          .order_by(chain_transactions.c.created_at.desc(),chain_transactions.c.id.desc())
+          .limit(limit+1).offset(offset))
+    with engine().connect() as conn:rows=[dict(row) for row in conn.execute(stmt).mappings().all()]
+    return {'transactions':rows[:limit],'has_more':len(rows)>limit}

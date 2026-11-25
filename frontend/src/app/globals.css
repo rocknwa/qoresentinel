@@ -16,3 +16,25 @@
 .native-login-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .native-login-actions .secondary,.native-login-actions .primary{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none}
 @media(max-width:700px){.native-login-banner{padding:13px}.native-login-actions{width:100%}.native-login-actions button,.native-login-actions a{flex:1;justify-content:center}}
+
+/* Audit archive, discussion and verified transaction activity */
+.history-list{display:flex;flex-direction:column;gap:10px}
+.history-item{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:15px;border:1px solid #273c55;background:#111c2c;border-radius:7px;flex-wrap:wrap}
+.history-item>div:first-child{min-width:220px;flex:1;overflow-wrap:anywhere}
+.history-item strong{color:#e4edf6;font-size:14px}
+.history-item p{color:#8fa4bc;font-size:12px;margin:5px 0 0}
+.history-item .tx-hash{font-family:ui-monospace,monospace;font-size:11px;word-break:break-all}
+.history-item .secondary{display:inline-flex;align-items:center;gap:7px}
+.audit-discussion{margin-top:18px}
+.conversation-log{display:flex;flex-direction:column;gap:14px;max-height:560px;overflow:auto;margin:17px 0;padding:4px 0}
+.conversation-message{border:1px solid #294159;border-radius:7px;padding:16px;background:#101c2a}
+.conversation-message.user{margin-left:8%;border-color:#23798f;background:#112e3c}
+.conversation-message strong{font-size:13px;color:#73d9f0}
+.conversation-message pre{margin:10px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;line-height:1.6;font-size:13px;color:#cedce8}
+@media(max-width:650px){.history-item{align-items:flex-start}.history-item .secondary{width:100%;justify-content:center}.conversation-message.user{margin-left:0}}
+
+.finding-item{border:1px solid #314a61;background:#121f31;border-radius:8px;padding:15px}
+.finding-meta{display:flex;align-items:center;gap:12px;margin-bottom:9px;flex-wrap:wrap}
+.finding-meta strong{color:#e1eaf2;line-height:1.5;font-size:14px}
+.finding-item pre{font-family:inherit;white-space:pre-wrap;overflow-wrap:anywhere;color:#aebfd2;font-size:12px;line-height:1.65;max-height:340px;overflow:auto}
+.history-load-more{display:block;margin:18px auto 0}

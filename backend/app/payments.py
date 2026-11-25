@@ -64,6 +64,7 @@ def verify(intent_id:str,wallet:str,tx_hash:str):
     state=storage.mark_intent_paid(intent_id,wallet,hash_normalized,new_expiry)
     if state not in ('paid','already-paid'):
         raise HTTPException(409,'Payment was already credited or intent is unavailable')
+    storage.record_chain_transaction(wallet,hash_normalized,'subscription',row['token'],row['amount_raw'])
     return {'status':'paid','tx_hash':hash_normalized,'plan':row['plan'],'expires_at':new_expiry,**evidence}
 
 def entitlement(wallet:str):
