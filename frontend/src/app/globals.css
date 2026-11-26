@@ -75,3 +75,7 @@
 
 /* Sidebar sections are navigable URLs, including open-in-new-tab. */
 .nav-item{text-decoration:none;cursor:pointer}
+
+/* Permanent audit detail links and copy action */
+.audit-link-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.history-item a.secondary{text-decoration:none}

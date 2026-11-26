@@ -3,7 +3,7 @@ import json
 import os
 from datetime import datetime,timedelta,timezone
 from concurrent.futures import ThreadPoolExecutor
-from fastapi import FastAPI,HTTPException,UploadFile,File,Depends,Request,Query
+from fastapi import FastAPI,HTTPException,UploadFile,File,Depends,Request,Query,Response
 from pydantic import BaseModel,Field
 from .auth import require_wallet,ChallengeRequest,VerifyRequest,challenge,verify
 from . import storage,auth,pqc,chain,payments
@@ -30,8 +30,12 @@ def create_native_challenge(payload:auth.ChallengeRequest):
     return auth.native_challenge(payload.address)
 
 @app.post('/api/v1/auth/native/verify')
-def complete_native_challenge(payload:auth.NativeVerifyRequest):
-    return auth.verify_native(payload)
+def complete_native_challenge(payload:auth.NativeVerifyRequest,response:Response):
+    result=auth.verify_native(payload)
+    response.set_cookie('qs_session',result['access_token'],max_age=3600,
+                        httponly=True,secure=os.getenv('QORE_COOKIE_SECURE','true').lower()!='false',
+                        samesite='lax',path='/')
+    return result
 
 @app.get('/health')
 def health():return {'status':'ok','service':'qoresentinel-backend'}
@@ -43,7 +47,23 @@ def new_challenge(payload:ChallengeRequest,request:Request):
     return challenge(payload.address,request.headers.get('host','qoresentinel'))
 
 @app.post('/api/v1/auth/verify')
-def verify_challenge(payload:VerifyRequest):return verify(payload)
+def verify_challenge(payload:VerifyRequest,response:Response):
+    result=verify(payload)
+    response.set_cookie('qs_session',result['access_token'],max_age=3600,
+                        httponly=True,secure=os.getenv('QORE_COOKIE_SECURE','true').lower()!='false',
+                        samesite='lax',path='/')
+    return result
+
+@app.get('/api/v1/auth/session')
+def wallet_session(owner:str=Depends(require_wallet)):
+    return {'wallet':owner,'authenticated':True}
+
+@app.post('/api/v1/auth/logout')
+def wallet_logout(response:Response):
+    response.delete_cookie('qs_session',path='/',samesite='lax',
+                           secure=os.getenv('QORE_COOKIE_SECURE','true').lower()!='false',
+                           httponly=True)
+    return {'ok':True}
 
 @app.get('/api/v1/audits')
 def audit_history(owner:str=Depends(require_wallet),

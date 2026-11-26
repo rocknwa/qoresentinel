@@ -23,6 +23,8 @@ async function request<T>(path:string,init?:RequestInit):Promise<T>{
 const json=(body:unknown)=>({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} as RequestInit);
 export const api={
  health:()=>request<{status:string}>('/health'),
+ session:()=>request<{wallet:string;authenticated:boolean}>('/api/v1/auth/session'),
+ logout:()=>request<{ok:boolean}>('/api/v1/auth/logout',{method:'POST'}),
  audits:(offset=0)=>request<{audits:AuditSummary[];has_more:boolean}>(`/api/v1/audits?limit=50&offset=${offset}`),
  auditMessages:(id:string)=>request<{messages:AuditMessage[]}>(`/api/v1/audits/${encodeURIComponent(id)}/messages`),
  auditQuestion:(id:string,question:string)=>request<{answer:string}>(`/api/v1/audits/${encodeURIComponent(id)}/messages`,json({question})),
