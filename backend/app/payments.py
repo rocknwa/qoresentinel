@@ -20,25 +20,33 @@ def payment_ready():
 def payment_memo(intent_id:str)->str:
     return f'QoreSentinel testnet subscription {intent_id}'
 
-def create(wallet:str,plan:str):
-    treasury=payment_ready()
-    if not auth.is_native(wallet):
-        raise HTTPException(422,'QoreX native authentication is required for testnet checkout')
-    if wallet==treasury:
-        raise HTTPException(422,'The treasury wallet cannot purchase its own subscription')
+def plan_quote(plan:str):
+    """Use the same configured amount for preflight checks and payment intents."""
+    payment_ready()
     if plan not in PLANS:raise HTTPException(422,'Unknown testnet plan')
     try:
         price=Decimal(os.getenv(PLANS[plan],''))
         raw=price*1_000_000
         if not price.is_finite() or price<=0 or price>100 or raw!=raw.to_integral_value():
             raise ValueError()
-    except (ValueError,InvalidOperation):
+    except (ValueError,InvalidOperation,TypeError):
         raise HTTPException(503,'Testnet plan amount not configured')
-    row=storage.create_intent(wallet,plan,int(raw),chain.FUSD_DENOM,treasury,int(time.time())+1800)
+    return {'plan':plan,'network':'qorechain-diana','chain_id':9800,
+            'currency':'fUSD','denom':chain.FUSD_DENOM,'decimals':6,
+            'amount_raw':str(int(raw)),'amount_fusd':f'{price:.6f}'}
+
+def create(wallet:str,plan:str):
+    quote=plan_quote(plan)
+    treasury=payment_ready()
+    if not auth.is_native(wallet):
+        raise HTTPException(422,'QoreX native authentication is required for testnet checkout')
+    if wallet==treasury:
+        raise HTTPException(422,'The treasury wallet cannot purchase its own subscription')
+    row=storage.create_intent(wallet,plan,int(quote['amount_raw']),chain.FUSD_DENOM,treasury,int(time.time())+1800)
     return {'id':row['id'],'network':'qorechain-diana','chain_id':9800,
         'currency':'fUSD','decimals':6,'denom':chain.FUSD_DENOM,
         'recipient':row['treasury'],'amount_raw':row['amount_raw'],
-        'amount_fusd':f'{price:.6f}','memo':payment_memo(row['id']),
+        'amount_fusd':quote['amount_fusd'],'memo':payment_memo(row['id']),
         'expires_at':row['expires_at'],'status':'pending',
         'notice':'Testnet tokens only. A QoreX-approved native transfer is required.'}
 
