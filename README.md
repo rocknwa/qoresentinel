@@ -110,9 +110,9 @@ Saved audit history, detailed results, report conversations, subscription activi
 
 ## Acknowledgements
 
-We acknowledge Pashov Audit Group for the original specialist auditing methodology and associated open-source materials that informed QoreSentinel's audit engine.
+We acknowledge Pashov Audit Group for the MIT-licensed `solidity-auditor` skill, including the twelve specialist-agent prompts and supporting audit methodology used in QoreSentinel's security-analysis workflow.
 
-QoreSentinel adapts this foundation into its own application architecture, including source ingestion, backend orchestration, LLM provider integration, report generation, wallet-based access and QoreChain integrations.
+QoreSentinel integrates these materials into a Python-based application architecture covering Solidity source ingestion, audit orchestration, cloud LLM providers, report generation, wallet authentication and QoreChain integrations.
 
 The upstream Pashov skills are MIT-licensed. Relevant upstream copyright and licence notices are preserved in accordance with the licence.
 

@@ -8,7 +8,7 @@ This document describes where AI is used, how the AI components are orchestrated
 
 ### Twelve-specialist smart-contract security analysis
 
-QoreSentinel integrates the twelve-specialist Solidity auditing methodology from [Pashov Audit Group's open-source skills](https://github.com/pashov/skills), particularly its `solidity-auditor` skill.
+QoreSentinel incorporates the twelve specialist-agent prompts and supporting auditor and judging guidance from [Pashov Audit Group's open-source `solidity-auditor` skill](https://github.com/pashov/skills/tree/main/solidity-auditor). These upstream materials are MIT-licensed.
 
 The specialist approach divides smart-contract security analysis into focused areas rather than relying on one general-purpose AI prompt. The specialist analyses are consolidated through a final judge stage.
 
@@ -18,10 +18,10 @@ QoreSentinel adapts this foundation into its own application workflow, including
 - Backend audit orchestration and execution tracking.
 - Integration with configurable cloud LLM providers.
 - Collection and presentation of specialist analysis results.
-- Final judge synthesis and structured security reporting.
+- Final judge synthesis, Markdown security reports and report-derived findings.
 - Persistent audit history and wallet-scoped access.
 
-Pashov Audit Group is credited for the upstream specialist auditing methodology. QoreSentinel's application integration and surrounding product implementation are developed independently.
+Pashov Audit Group is credited for the upstream specialist prompts and auditing methodology. QoreSentinel's Python orchestration and surrounding application integration are developed independently.
 
 ### LLM providers
 
@@ -40,13 +40,13 @@ The specific model used may change as providers update their offerings.
 
 QoreSentinel also provides an AI-powered security assistant that helps users understand their projects and audit results. Its purpose is to provide contextual explanations and additional security insight based on available project information.
 
-## 2. AI-assisted post-quantum readiness
+## 2. Post-quantum readiness and QoreScan integration
 
-QoreSentinel integrates QoreScan for cryptographic inventory and post-quantum readiness analysis.
+QoreSentinel integrates QoreScan, a cryptographic inventory tool, for post-quantum readiness analysis. It runs separately from the LLM-based security audit.
 
-The scanner identifies cryptographic assets and their source locations, classifies relevant algorithms and generates a CycloneDX 1.6 Cryptographic Bill of Materials (CBOM).
+QoreScan identifies cryptographic assets and their source locations, classifies relevant algorithms and generates a CycloneDX 1.6 Cryptographic Bill of Materials (CBOM).
 
-The AI auditing workflow and the QoreScan inventory workflow are separate components. QoreSentinel combines their outputs to give developers a broader view of contract security and cryptographic exposure.
+QoreSentinel presents the audit and cryptographic inventory as complementary workflows, giving developers visibility into contract security findings and cryptographic exposure.
 
 ## 3. AI-assisted development
 
