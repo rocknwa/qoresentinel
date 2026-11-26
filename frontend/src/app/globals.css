@@ -60,3 +60,15 @@
 .checkout-recovery .history-list{margin:12px 0}
 .checkout-recovery .history-item{background:#13243a}
 .checkout-recovery .secondary{display:inline-flex;align-items:center;gap:6px}
+
+/* Wallet onboarding states */
+.wallet-onboarding{display:flex;flex-direction:column;gap:14px;margin-bottom:18px;padding:18px 20px;border:1px solid #3c637d;background:#142637;border-radius:8px}
+.wallet-onboarding-heading{display:flex;gap:13px;align-items:flex-start;color:#9cdeef}
+.wallet-onboarding-heading>svg{flex-shrink:0;margin-top:2px}
+.wallet-onboarding-heading strong{display:block;font-size:15px;color:#edf7fc}
+.wallet-onboarding-heading p,.wallet-onboarding-guide{margin:6px 0 0;color:#b6c9da;font-size:13px;line-height:1.65}
+.wallet-onboarding-guide{padding:12px;border:1px solid #38556d;background:#10202e;border-radius:6px}
+.wallet-onboarding-guide strong{color:#def4ff}
+.wallet-onboarding-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.wallet-onboarding-actions .secondary,.wallet-onboarding-actions .primary{display:inline-flex;align-items:center;justify-content:center;gap:7px;text-decoration:none;min-height:38px}
+@media(max-width:640px){.wallet-onboarding-actions>*{width:100%}}

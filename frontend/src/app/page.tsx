@@ -2,7 +2,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {Activity,ArrowRight,Bell,BookOpen,CheckCircle2,ChevronDown,CircleAlert,Clock3,CloudUpload,Code2,CreditCard,Download,FileCode2,FileSearch,FileText,Fingerprint,FolderOpen,HelpCircle,Hexagon,LayoutDashboard,LockKeyhole,Menu,MessageSquareText,Plus,Radio,RefreshCcw,Search,Settings2,Shield,ShieldAlert,ShieldCheck,Sparkles,Upload,Wallet, X} from 'lucide-react';
 import {api,setAccessToken,type Audit,type AuditSummary,type AuditMessage,type ChainTx,type Project,type PqcScan,type TxEvidence,type PaymentIntent,type PendingPaymentIntent,type PlanQuote} from '@/lib/api';
-import {connectQoreX,loginProof,nativeSend,sendHybridProof,FAUCET_URL} from '@/lib/wallet';
+import {connectQoreX,loginProof,nativeSend,sendHybridProof,FAUCET_URL,QOREX_CHROME_URL,QOREX_FIREFOX_URL,QOREX_NETWORK_GUIDE,hasQoreXNative,classifyQoreXError,type QoreXConnectIssue} from '@/lib/wallet';
 
 type View='overview'|'new-audit'|'audit-progress'|'audit-results'|'audit-history'|'transaction-history'|'assistant'|'pqc'|'billing'|'settings';
 const agentNames=['Access Control','Asymmetry','Boundary','Economic Security','Execution Trace','First Principles','Flow Gap','Invariant','Math Precision','Numerical Gap','Periphery','Trust Gap'];
@@ -34,6 +34,8 @@ export default function Home(){
  const [gasBalance,setGasBalance]=useState<string|null>(null);
  const [pendingLogin,setPendingLogin]=useState<{address:string;challenge_id:string;tx_hash:string}|null>(null);
  const [needsFaucet,setNeedsFaucet]=useState(false);
+ const [walletIssue,setWalletIssue]=useState<QoreXConnectIssue|null>(null);
+ const [walletMessage,setWalletMessage]=useState('');
  const [jobId,setJobId]=useState('');const [agentDone,setAgentDone]=useState(0);
  const [pqcScan,setPqcScan]=useState<PqcScan|null>(null);
  const [txHash,setTxHash]=useState('');const [hybridSendStatus,setHybridSendStatus]=useState('');const [txEvidence,setTxEvidence]=useState<TxEvidence|null>(null);
@@ -136,7 +138,7 @@ export default function Home(){
    finally{setLoadingHistory(false);}
  }
  function afterLogin(token:string){
-   setAccessToken(token);setSignedIn(true);setPendingLogin(null);setNeedsFaucet(false);
+   setWalletIssue(null);setWalletMessage('');setAccessToken(token);setSignedIn(true);setPendingLogin(null);setNeedsFaucet(false);
    setNotice('QoreX native wallet authenticated on Diana testnet.');
    api.subscription().then(setSubscription).catch(()=>{});
    api.pendingIntents().then(x=>setPendingPayments(x.intents)).catch(()=>{});
@@ -151,8 +153,11 @@ export default function Home(){
    return balance;
  }
  async function signInNative(){
-   setBusy(true);setError('');setNotice('');try{
-     const address=await connectQoreX();setNativeAddress(address);
+   setBusy(true);setError('');setNotice('');setWalletIssue(null);setWalletMessage('');try{
+     if(!hasQoreXNative()){
+       setWalletIssue('missing');setWalletMessage('QoreX is not detected in this browser. Install or enable the extension, then retry.');return;
+     }
+     const address=await connectQoreX();setNativeAddress(address);setWalletIssue(null);
      const balance=await refreshGas(address);
      if(balance.low_gas){
        setNotice('Your testnet QOR balance is low. Claim gas from the faucet, then connect again.');return;
@@ -163,9 +168,11 @@ export default function Home(){
      try{const session=await api.nativeVerify(address,challenge.challenge_id,result.txHash);afterLogin(session.access_token);}
      catch(e){setNotice('Transaction submitted. Use Verify login transaction after it is indexed.');
        setError(e instanceof Error?e.message:'Transaction confirmation pending');}
-   }catch(e){const msg=e instanceof Error?e.message:'QoreX sign-in failed';
-     setError(/wallet is locked/i.test(msg)?'Unlock the QoreX extension, then try connecting again.':msg);}
-   finally{setBusy(false);}
+   }catch(e){
+     const issue=classifyQoreXError(e);
+     if(issue){setWalletIssue(issue.issue);setWalletMessage(issue.message);setError('');}
+     else setError(e instanceof Error?e.message:'QoreX sign-in failed');
+   }finally{setBusy(false);}
  }
  async function verifyPendingLogin(){
    if(!pendingLogin)return;setBusy(true);setError('');try{
@@ -174,7 +181,7 @@ export default function Home(){
    }catch(e){setError(e instanceof Error?e.message:'Native login verification pending');}
    finally{setBusy(false);}
  }
- function logout(){setSignedIn(false);setNativeAddress('');setGasBalance(null);setPendingLogin(null);
+ function logout(){setWalletIssue(null);setWalletMessage('');setSignedIn(false);setNativeAddress('');setGasBalance(null);setPendingLogin(null);
    setNeedsFaucet(false);setAccessToken('');setSubscription(null);setRecentProjects([]);
    setProject(null);setAudit(null);setPqcScan(null);setPaymentIntent(null);setPaymentHash('');setFunding(null);setFundingMessage('');setFundingError('');
    setAllAudits([]);setTransactions([]);setMoreAudits(false);setMoreTransactions(false);setAuditMessages([]);setSelectedAuditId('');
@@ -342,6 +349,16 @@ export default function Home(){
  {menuOpen&&<button className="scrim" onClick={()=>setMenuOpen(false)} aria-label="Close navigation"/>}
  <div className="main-area"><header className="topbar"><div className="topbar-left"><button className="mobile-open" onClick={()=>setMenuOpen(true)} aria-label="Open navigation"><Menu size={21}/></button><span>Workspace</span><span className="slash">/</span><strong>{menu.find(item=>item.id===view)?.name}</strong></div><div className="topbar-actions"><span className={`connection ${backend}`}><span className="connection-dot"/>{backend==='online'?'API Connected':backend==='checking'?'Checking API':'API Offline'}</span><a className="wallet-connect" href={FAUCET_URL} target="_blank" rel="noreferrer" title="Claim testnet QOR or fUSD">Faucet</a><button className="wallet-connect" disabled={busy} onClick={signedIn?logout:pendingLogin?verifyPendingLogin:signInNative} title={signedIn?'Sign out':'Authenticate using a wallet-approved native transaction'}><Wallet size={14}/>{signedIn?`${nativeAddress.slice(0,9)}… Sign out`:pendingLogin?'Verify login transaction':busy?'Connecting…':'Sign in with QoreX'}</button><button className="new-audit-top" onClick={()=>navigate('new-audit')}><Plus size={16}/> New Audit</button></div></header>
  <main className="page">
+ {!signedIn&&walletIssue&&<section className="wallet-onboarding" role="alert" aria-live="polite">
+  <div className="wallet-onboarding-heading"><Wallet size={19}/><div><strong>{walletIssue==='missing'?'Install QoreX to continue':walletIssue==='wrong-network'?'Switch QoreX to Diana Testnet':walletIssue==='locked'?'Unlock your QoreX wallet':'QoreX connection cancelled'}</strong><p>{walletMessage}</p></div></div>
+  {walletIssue==='wrong-network'&&<p className="wallet-onboarding-guide">Open QoreX, unlock it, tap the extension version number seven times to reveal testnet controls, then select <strong>Switch to testnet (diana)</strong>. Return here and retry.</p>}
+  {walletIssue==='missing'&&<p className="wallet-onboarding-guide">Install QoreX only from the official extension listing. Enable it for this site, then reload or retry the connection. Never share your recovery phrase.</p>}
+  <div className="wallet-onboarding-actions">
+   {walletIssue==='missing'&&<><a className="secondary" href={QOREX_CHROME_URL} target="_blank" rel="noopener noreferrer">Install for Chrome / Edge <ArrowRight size={14}/></a><a className="secondary" href={QOREX_FIREFOX_URL} target="_blank" rel="noopener noreferrer">Install for Firefox <ArrowRight size={14}/></a></>}
+   {walletIssue==='wrong-network'&&<a className="secondary" href={QOREX_NETWORK_GUIDE} target="_blank" rel="noopener noreferrer">Network switching guide <ArrowRight size={14}/></a>}
+   <button className="primary" disabled={busy} onClick={signInNative}><RefreshCcw size={14}/>{busy?'Connecting…':'Retry connection'}</button>
+  </div>
+ </section>}
  {!signedIn&&<div className={`native-login-banner ${needsFaucet?'low-gas':''}`}>
   <div><strong>{needsFaucet?'Low testnet QOR balance':'QoreX Native authentication'}</strong>
    <p>{needsFaucet?'Get test QOR before signing in. A first-time PQC key registration and the login transaction both require gas.':'Connect a qor1 wallet and approve a one-time hybrid-signed self-transfer to authenticate.'}</p>

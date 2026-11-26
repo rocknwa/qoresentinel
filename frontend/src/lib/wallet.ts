@@ -2,12 +2,52 @@ import { getQorexNative, qorexSignAndBroadcast } from '@qorechain/qorex-types';
 
 export const NATIVE_CHAIN = 'qorechain-diana';
 export const FAUCET_URL = 'https://dashboard.qorechain.io/faucet';
+export const QOREX_CHROME_URL = 'https://chromewebstore.google.com/detail/qorex/cflpnggbnnifibblifgbeobogdpfjpcg';
+export const QOREX_FIREFOX_URL = 'https://addons.mozilla.org/en-US/firefox/addon/qorex/';
+export const QOREX_NETWORK_GUIDE = 'https://docs.qorechain.io/qorex/testnet-features/';
+
+export type QoreXConnectIssue = 'missing' | 'wrong-network' | 'locked' | 'rejected';
+
+export class QoreXConnectError extends Error {
+  constructor(readonly issue: QoreXConnectIssue, message: string) {
+    super(message);
+    this.name = 'QoreXConnectError';
+  }
+}
+
+export function hasQoreXNative(): boolean {
+  return typeof window !== 'undefined' && Boolean(getQorexNative());
+}
+
+export function classifyQoreXError(error: unknown): QoreXConnectError | null {
+  if (error instanceof QoreXConnectError) return error;
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const code = typeof error === 'object' && error !== null && 'code' in error
+    ? String((error as {code?: unknown}).code) : '';
+  if (/chain\s+\S+\s+does not match the active network|switch the network in QoreX|network mismatch|qorechain-vladi|wrong network/i.test(message)) {
+    return new QoreXConnectError('wrong-network', 'QoreX is on a different network. Switch to Diana Testnet inside QoreX, then retry.');
+  }
+  if (/wallet is locked|unlock (?:the )?wallet/i.test(message)) {
+    return new QoreXConnectError('locked', 'Unlock QoreX, then retry the connection.');
+  }
+  if (code === '4001' || /signature rejected|user rejected|user denied|request rejected/i.test(message)) {
+    return new QoreXConnectError('rejected', 'Connection was cancelled in QoreX. Try again when ready.');
+  }
+  return null;
+}
 
 export async function connectQoreX(): Promise<string> {
   const native = getQorexNative();
-  if (!native) throw new Error('QoreX was not detected. Unlock the wallet and switch to Diana testnet.');
-  await native.enable(NATIVE_CHAIN);
-  const key = await native.getKey(NATIVE_CHAIN);
+  if (!native) {
+    throw new QoreXConnectError('missing', 'QoreX is not detected in this browser. Install or enable the extension, then retry.');
+  }
+  let key: Awaited<ReturnType<typeof native.getKey>>;
+  try {
+    await native.enable(NATIVE_CHAIN);
+    key = await native.getKey(NATIVE_CHAIN);
+  } catch (error) {
+    throw classifyQoreXError(error) ?? error;
+  }
   if (!/^qor1[023456789acdefghjklmnpqrstuvwxyz]{38}$/.test(key.bech32Address)) {
     throw new Error('QoreX did not provide a valid native address.');
   }
