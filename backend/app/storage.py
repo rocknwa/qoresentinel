@@ -4,13 +4,14 @@ Render requires DATABASE_URL pointing at PostgreSQL for durable production data.
 SQLite is intended only for local development and tests.
 """
 import json
+import hashlib
 import os
 import secrets
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
-from sqlalchemy import create_engine, MetaData, Table, Column, String, Text, Integer, select, update, insert, delete, UniqueConstraint
+from sqlalchemy import create_engine, MetaData, Table, Column, String, Text, Integer, select, update, insert, delete, UniqueConstraint, func, text
 from sqlalchemy.pool import NullPool
 from .settings import DATA_DIR
 
@@ -56,6 +57,10 @@ audit_messages = Table('audit_messages', metadata,
     Column('role', String(16), nullable=False),
     Column('body', Text, nullable=False),
     Column('created_at', String(35), nullable=False))
+usage_events = Table('usage_events', metadata,
+    Column('id',String(40),primary_key=True),Column('owner',String(42),nullable=False),
+    Column('kind',String(24),nullable=False),Column('created_at',String(35),nullable=False))
+
 chain_transactions = Table('chain_transactions', metadata,
     Column('id', String(40), primary_key=True),
     Column('tx_hash', String(70), nullable=False),
@@ -139,6 +144,33 @@ def create_job(project_id:str,owner:str):
     data={'id':str(uuid.uuid4()),'project_id':project_id,'owner':owner.lower(),'status':'queued','completed_agents':0,'total_agents':12,'report':'','agent_results':'[]','error':'','created_at':iso_now()}
     with engine().begin() as c:c.execute(insert(audit_jobs).values(**data))
     return data['id']
+
+def reserve_audit(owner:str,project_id:str,limit:int,since_iso:str):
+    """Atomically reserve a wallet's audit slot before starting a costly worker."""
+    owner=owner.lower()
+    eng=engine()
+    # Lock the wallet's quota scope across Render workers on PostgreSQL.
+    with _audit_reservation_lock:
+        with eng.begin() as conn:
+            if eng.dialect.name=='postgresql':
+                lock_key=int.from_bytes(hashlib.sha256(owner.encode()).digest()[:8],'big',signed=True)
+                conn.execute(text('SELECT pg_advisory_xact_lock(:key)'),{'key':lock_key})
+            active=conn.scalar(select(func.count()).select_from(audit_jobs).where(
+                (audit_jobs.c.owner==owner)&(audit_jobs.c.status.in_(['queued','running']))))
+            if active:return {'error':'pending'}
+            used=conn.scalar(select(func.count()).select_from(audit_jobs).where(
+                (audit_jobs.c.owner==owner)&(audit_jobs.c.created_at>=since_iso))) or 0
+            if used>=limit:return {'error':'limit','used_today':used,'daily_limit':limit}
+            project=conn.execute(select(projects.c.id).where(
+                (projects.c.id==project_id)&(projects.c.owner==owner))).first()
+            if not project:return {'error':'not-found'}
+            data={'id':str(uuid.uuid4()),'project_id':project_id,'owner':owner,'status':'queued',
+                  'completed_agents':0,'total_agents':12,'report':'','agent_results':'[]',
+                  'error':'','created_at':iso_now()}
+            conn.execute(insert(audit_jobs).values(**data))
+            return {'id':data['id'],'used_today':used+1,'daily_limit':limit}
+
+_audit_reservation_lock = Lock()
 
 def get_job(job_id:str,owner:str):return _one(audit_jobs,'id',job_id,audit_jobs.c.owner==owner.lower())
 
@@ -294,3 +326,28 @@ def list_chain_transactions(owner:str,limit:int=50,offset:int=0):
           .limit(limit+1).offset(offset))
     with engine().connect() as conn:rows=[dict(row) for row in conn.execute(stmt).mappings().all()]
     return {'transactions':rows[:limit],'has_more':len(rows)>limit}
+
+def usage_count(owner:str,kind:str,since_iso:str):
+    with engine().connect() as conn:
+        return conn.scalar(select(func.count()).select_from(usage_events).where(
+            (usage_events.c.owner==owner.lower())&
+            (usage_events.c.kind==kind)&(usage_events.c.created_at>=since_iso))) or 0
+
+def reserve_usage(owner:str,kind:str,limit:int,since_iso:str):
+    """Reserve a costly request under a per-wallet advisory transaction lock."""
+    if kind not in ('assistant','pqc'):raise ValueError('Invalid usage type')
+    if limit<=0:return False
+    eng=engine()
+    with _audit_reservation_lock:
+        with eng.begin() as conn:
+            if eng.dialect.name=='postgresql':
+                key=int.from_bytes(hashlib.sha256((owner.lower()+'-'+kind).encode()).digest()[:8],'big',signed=True)
+                conn.execute(text('SELECT pg_advisory_xact_lock(:key)'),{'key':key})
+            count=conn.scalar(select(func.count()).select_from(usage_events).where(
+                (usage_events.c.owner==owner.lower())&(usage_events.c.kind==kind)&
+                (usage_events.c.created_at>=since_iso))) or 0
+            if count>=limit:return False
+            conn.execute(insert(usage_events).values(
+                id=str(uuid.uuid4()),owner=owner.lower(),kind=kind,created_at=iso_now()))
+            return True
+
