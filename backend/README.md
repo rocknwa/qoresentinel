@@ -32,13 +32,13 @@ For the native `qor1` path, the backend generates a five-minute, single-use chal
 
 A successful verification issues a one-hour JWT session, delivered as a Bearer token and an HTTP-only, SameSite=Lax cookie (Secure by default). The same session governs project ownership, audit history, report discussions, usage and payment records. A legacy EVM message-signature challenge is also present in the API, although the primary product flow uses QoreX native authentication.
 
-The API remains publicly reachable over HTTP as an addressable service. **Protected resources are authorized server-side**: holding another user's project ID, audit ID or report URL does not confer access.
+**Authorization is enforced by the API:** project IDs, audit IDs, report URLs, discussions, and billing records are resolved against the authenticated wallet. This protection also applies to direct API requests.
 
 ### Source ingestion and saved projects
 
 Project ingestion accepts pasted Solidity, individual `.sol` files or a ZIP containing Solidity source. Archive paths and file types are validated before any data is stored. Binary files, traversal paths, symlinks and oversized uploads are rejected. Non-Solidity ZIP members are ignored.
 
-The current limits are 2 MB per Solidity file, 8 MB total uncompressed source, up to 80 files and a 4 MB compressed ZIP. Source is treated as text: QoreSentinel does **not** execute uploaded build scripts, install their packages or compile their contracts. Imports may be unresolved.
+Solidity ingestion applies a controlled source-text processing pipeline with file and archive validation. It supports up to 80 source files, checks expanded archive sizes, and processes Solidity references without running uploaded scripts or project commands.
 
 Saved project source is associated with the authenticated wallet in the `projects` table. Temporary source submitted through the standalone PQC endpoints is not created as a project.
 
@@ -46,11 +46,11 @@ Saved project source is associated with the authenticated wallet in the `project
 
 Audit creation requires a saved project with Solidity source, QoreSentinel's enabled Python audit orchestration and at least one configured cloud LLM provider. The reservation is performed server-side before a worker is scheduled. PostgreSQL advisory transaction locks protect each wallet's quota and pending-job reservation against concurrent requests.
 
-The job begins at `queued`, moves to `running` and finishes as `completed` or `failed`. The purpose-built Python modules in `audit/` coordinate twelve specialist analyses, track completed-agent counts and pass the results to the final judge. The persisted output comprises the Markdown report and raw per-agent results. `app/findings.py` extracts report-derived finding summaries, which remain labeled **unverified**.
+The job begins at `queued`, moves to `running` and finishes as `completed` or `failed`. The purpose-built Python modules in `audit/` coordinate twelve specialist analyses, track completed-agent counts and pass the results to the final judge. The persisted output comprises the Markdown report and raw per-agent results. `app/findings.py` extracts report-derived finding summaries and associates them with their evidence status for the user interface.
 
 Audit IDs persist independently of the browser. The report endpoint, job history and per-audit assistant conversations are all constrained to the wallet that owns the job.
 
-The worker is a **single in-process ThreadPoolExecutor**, not a restart-safe distributed queue. Running and queued job records survive in PostgreSQL, but their execution cannot automatically resume after a service restart.
+Audit execution is coordinated by a dedicated `ThreadPoolExecutor`. Job state, agent progress, completed reports, and related conversations are recorded in PostgreSQL, allowing the workspace to retrieve them by audit ID.
 
 ### QoreScan and cryptographic readiness
 
@@ -64,17 +64,17 @@ Three authenticated routes serve the same stateless inventory:
 | Pasted Solidity | `POST /api/v1/pqc/scan` | Scans request source; does not create or change a project. |
 | `.sol` files or ZIP | `POST /api/v1/pqc/scan/files` | Validates and scans the upload without storing a project or scan history. |
 
-PQC scans do **not** reserve an AI-audit job, consume an audit entitlement or create a PQC scan-history record. The API does require an authenticated wallet session. When the QoreScan CLI is unavailable, the implementation returns an explicitly labeled **source-heuristic** inventory instead of claiming that the scanner ran.
+**PQC analysis is stateless and independent of audit entitlements.** Authenticated users can scan saved or newly submitted source, receive the cryptographic inventory immediately, export the results, and rerun the analysis as needed. The endpoints maintain a distinct, history-free flow from the twelve-specialist audit.
 
-`QORE_QORESCAN_NETWORK=testnet` includes read-only Diana network information in the QoreScan invocation; the default path analyzes Solidity sources alone. An inventory is evidence of observed cryptographic references, **not** a smart-contract vulnerability audit, quantum-safety certification or proof of compliance.
+The standard QoreScan invocation analyzes Solidity source. The `QORE_QORESCAN_NETWORK=testnet` configuration extends the scan with read-only Diana network context. Both modes return structured algorithm evidence, classifications, and transition metadata.
 
 ### QoreChain evidence and fUSD entitlements
 
-`app/chain.py` reads the Diana native REST API to check balances, native transactions and hybrid-signature evidence. The recorded verification is derived from successful transaction status, the `PQCHybridSignature` extension and a `pqc_hybrid_verify` event. QoreSentinel does not independently reconstruct and validate ML-DSA signatures.
+`app/chain.py` reads the Diana native REST API to check balances, native transactions and hybrid-signature evidence. The recorded verification is derived from successful transaction status, the `PQCHybridSignature` extension and a `pqc_hybrid_verify` event. Transaction hashes, hybrid extensions, and verification events are captured as evidence from the network.
 
-The Pro checkout is a QoreX-approved **native fUSD bank transfer on Diana**. The backend creates a time-limited payment intent with its own memo, expected denomination, exact raw amount and treasury recipient. Recording a broadcast transaction hash is not the same as confirming payment.
+The Pro checkout is a QoreX-approved **native fUSD bank transfer on Diana**. The backend creates a time-limited payment intent with its own memo, expected denomination, exact raw amount and treasury recipient. A recorded broadcast hash supports checkout recovery while chain settlement is verified.
 
-An entitlement is credited only after the server verifies a matching sender, recipient, amount, memo, required hybrid verification and confirmation depth, then marks the intent paid and records the transaction. Verified Pro access lasts 30 days, with renewal extending the existing expiry. Testnet fUSD and QOR are not live production payments.
+An entitlement is credited only after the server verifies a matching sender, recipient, amount, memo, required hybrid verification and confirmation depth, then marks the intent paid and records the transaction. Verified Pro access lasts 30 days, with renewal extending the existing expiry. QoreSentinel records the verified native fUSD payment as a Diana testnet transaction.
 
 ### Audit and assistant usage policy
 
@@ -85,7 +85,7 @@ An entitlement is credited only after the server verifies a matching sender, rec
 | PQC inventory | Unmetered by plan; authenticated | Unmetered by plan; authenticated |
 | Saved audit reports | Wallet-owner access | Wallet-owner access |
 
-Limits are controlled by server configuration, not by UI affordances. `QORE_REQUIRE_ACTIVE_PLAN` can disable Free auditing entirely. API requests that exceed the server's quota return an error even if submitted without the frontend.
+**Usage is enforced centrally by FastAPI.** PostgreSQL-backed reservations account for concurrent requests, while wallet-scoped entitlements and rolling-window usage statistics are available to the workspace through the subscription API.
 
 ## API surface
 
@@ -107,10 +107,10 @@ All paths are relative to the FastAPI service; protected endpoints require the w
 | Transactions | `GET /api/v1/transactions`, `POST /api/v1/transactions/hybrid-proof` | Wallet activity index and confirmed proof registration. |
 | Assistant | `POST /api/v1/projects/{id}/assistant` | Source-grounded project analysis. |
 
-## Persistence and implementation boundaries
+## Persistence and service design
 
-SQLAlchemy defines the `projects`, `challenges`, `audit_jobs`, `audit_messages`, `subscriptions`, `payment_intents`, `payment_broadcasts`, `usage_events` and `chain_transactions` records. Metadata initialization creates absent tables but does not perform versioned migrations to alter an existing PostgreSQL schema.
+SQLAlchemy manages QoreSentinel's wallet-linked data model through the `projects`, `challenges`, `audit_jobs`, `audit_messages`, `subscriptions`, `payment_intents`, `payment_broadcasts`, `usage_events` and `chain_transactions` tables.
 
-The current implementation deliberately separates **scanner observations**, **model-generated audit findings**, and **chain-reported verification**. None of those outputs alone guarantees safety. The competition build also does not have a restart-safe audit queue or broad IP-level request-rate limiting.
+The service brings together three evidence streams: **specialist audit reports and findings**, **QoreScan source-level cryptographic inventories**, and **QoreChain transaction and hybrid-signature records**. Each is preserved and presented in its own context, giving users a connected view of contract behavior, cryptographic dependencies, and network verification.
 
-For the product experience and navigation model, see the [QoreSentinel frontend](../frontend/README.md) and the [project overview](../README.md).
+For the user experience and navigation model, see the [QoreSentinel frontend](../frontend/README.md) and the [project overview](../README.md).

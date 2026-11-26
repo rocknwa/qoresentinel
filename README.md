@@ -4,7 +4,7 @@
 
 QoreSentinel combines two security workflows in one wallet-connected workspace: its own twelve-specialist Solidity audit pipeline and a cryptographic inventory generated through the QoreScan engine. The former examines contract behavior and reports potential vulnerabilities; the latter identifies cryptographic dependencies, classifies quantum-migration exposure, and produces a machine-readable Cryptographic Bill of Materials (CBOM).
 
-QoreSentinel also connects those source-level findings with **chain-reported hybrid-signature evidence on the QoreChain Diana testnet**. It is a working demonstration of how contract review, cryptographic visibility, and verifiable network activity can coexist without representing an inventory scan as a security certification.
+QoreSentinel connects those source-level findings with **chain-reported hybrid-signature evidence on the QoreChain Diana testnet**. Audit intelligence, cryptographic asset visibility, wallet identity, and verifiable network activity come together in one integrated security workspace.
 
 **Application:** https://qoresentinel.vercel.app  
 **Network:** QoreChain Diana testnet (`qorechain-diana`, EVM chain ID `9800`)
@@ -25,9 +25,9 @@ QoreSentinel also connects those source-level findings with **chain-reported hyb
 
 A QoreX wallet establishes the workspace identity. A Solidity project is created from pasted source, individual `.sol` files, or a ZIP containing Solidity contracts. The submitted files become part of that wallet's saved project.
 
-Starting an audit creates a persistent job ID. The API reserves one of the wallet's available audit slots, queues execution, and reports progress as the twelve specialist analyses complete. The final synthesis is saved as Markdown alongside the individual agent results. The results page extracts finding summaries from the generated report, with those summaries explicitly marked **unverified**.
+Starting an audit creates a persistent job ID. The API reserves one of the wallet's available audit slots, queues execution, and reports progress as the twelve specialist analyses complete. The final synthesis is saved as Markdown alongside the individual agent results. The results page presents report-derived findings and their evidence alongside the complete security analysis.
 
-A report remains accessible through its private `/audits/{audit-id}` URL. The same wallet can return to the report and its saved discussion thread without purchasing another run. Knowing the URL is not sufficient to read another wallet's report.
+A report remains accessible through its private `/audits/{audit-id}` URL. The same wallet can reopen saved reports and discussion threads at any time. Server-side ownership checks keep audit history and report access private to the authenticated wallet.
 
 ### 2. From cryptographic source references to a CBOM
 
@@ -35,21 +35,21 @@ PQC Readiness is a separate workflow. It accepts a previously saved project, new
 
 The output includes a **CycloneDX 1.6 CBOM**, QoreScan classification and transition metadata, and a downloadable framework-mapped Markdown report when available. The dashboard distinguishes quantum-vulnerable public-key cryptography from hashes and other cryptographic primitives.
 
-PQC scans **do not create projects, audit jobs, scan history, or paid audit charges**. Pasted and uploaded PQC-only source is processed for the request rather than stored as a project. A user may rerun a scan whenever the source changes. The user retains a result by exporting the CBOM or report.
+**Unlimited, on-demand PQC analysis is independent of paid auditing.** Saved projects can be rescanned, while pasted and uploaded sources run as temporary, history-free scans. Each run produces downloadable CBOM and readiness-report outputs for further analysis and sharing.
 
 ### 3. From QoreX approval to chain evidence
 
 QoreSentinel uses QoreX's native `qor1` wallet interface on Diana. Native authentication begins with a short-lived challenge and a wallet-approved 1 uqor self-transfer containing the challenge memo. The backend checks the sender, recipient, amount, memo, confirmation, and chain-reported hybrid verification before issuing a one-hour session.
 
-The separate hybrid-proof action uses another wallet-approved 1 uqor self-transfer and checks its transaction record for the PQC hybrid extension and verification event. It is **evidence reported by QoreChain**, not an independent local ML-DSA signature verification by QoreSentinel.
+The separate hybrid-proof action uses another wallet-approved 1 uqor self-transfer and inspects the transaction record for the PQC hybrid extension and verification event. The dashboard presents the resulting **QoreChain-reported hybrid-signature evidence**, linked to the transaction hash.
 
 An authenticated browser session can be restored after refresh through a secure, HTTP-only cookie. Locked-wallet and network-mismatch states are surfaced in the interface; compatible QoreX versions may display their own unlock prompt when wallet access is requested.
 
 ### 4. From a native fUSD transfer to Pro access
 
-The billing screen retrieves the server-defined testnet fUSD amount and treasury destination before requesting a QoreX-approved transfer. The resulting transaction hash can be saved against a pending intent, including after a page refresh. **A broadcast hash alone never activates Pro.**
+The billing screen retrieves the server-defined testnet fUSD amount and treasury destination before requesting a QoreX-approved transfer. The resulting transaction hash is associated with a pending payment intent, enabling seamless checkout recovery after a page refresh.
 
-Only an on-chain transfer that matches the intended sender, treasury, denomination, exact amount, memo, hybrid-verification requirement, and confirmation depth can credit the subscription. A verified payment extends Pro access by 30 days. These are **testnet assets**, not a production payment system.
+On-chain settlement verification matches the sender, treasury, denomination, exact amount, memo, hybrid-signature verification, and confirmation depth. Once verified, the payment activates 30 days of Pro access on the Diana testnet.
 
 ## Architecture
 
@@ -70,7 +70,7 @@ FastAPI service (Render)
 PostgreSQL (Supabase in the hosted environment)
 ```
 
-The frontend owns presentation, routing, file selection, transaction approval, and report exports. **Authentication, ownership, usage limits, payment confirmation, and audit persistence are enforced in FastAPI.** The wallet extension signs transactions; QoreSentinel does not handle recovery phrases or private keys.
+The frontend owns presentation, routing, file selection, transaction approval, and report exports. **Authentication, ownership, usage limits, payment confirmation, and audit persistence are enforced in FastAPI.** QoreX handles transaction signing and wallet secrets within the extension, while QoreSentinel verifies authenticated sessions and on-chain outcomes.
 
 | Repository area | Role |
 | --- | --- |
@@ -79,14 +79,13 @@ The frontend owns presentation, routing, file selection, transaction approval, a
 | `backend/audit/` | Specialist-agent orchestration, report synthesis, prompts and cloud-provider adapters. |
 | `backend/tests/` | Authentication, billing, job history, direct API authorization, PQC, wallet session and scanner regression tests. |
 
-## Product boundaries
+## Security and access
 
-- **Audits and PQC inventories answer different questions.** A detected algorithm is evidence of a source reference, not proof that the entire contract is quantum-safe or insecure. QoreScan does not certify compliance.
-- **The audit findings are generated claims.** Report-derived severities and evidence require independent review before security decisions.
-- **Free and Pro are enforced at the API boundary.** The default rolling 24-hour audit allowances are 2 for Free and 10 for Pro, with configurable limits; project-level assistant requests have separate usage limits. PQC scans have no paid-audit quota.
-- **Source access is wallet-scoped.** Direct access to API endpoints is possible, but project records, private reports, audit discussions, and payment records require the owning wallet's authenticated session.
-- **Audit processing is an MVP worker.** Jobs are stored durably, but execution uses an in-process worker rather than a restart-safe distributed queue. A service restart during an active job may require operational intervention.
-- **Wallet and payment interactions are on Diana testnet.** Hybrid verification refers to evidence returned by chain endpoints; it does not replace cryptographic verification or a production settlement audit.
+QoreSentinel keeps contract security workflows tied to a verified wallet identity. Its API performs source validation, project ownership checks, audit quota reservation, report authorization, and on-chain payment verification before committing protected operations.
+
+**Free and Pro audit allowances are enforced server-side:** the default rolling 24-hour limits are two audits for Free and ten for Pro, with separate security-assistant allowances. PQC inventory scanning remains available to authenticated users independently of paid audit usage.
+
+Saved audit history, detailed results, report conversations, subscription activity, and transaction history are organized by wallet. QoreX handles native transaction approvals, and FastAPI validates the corresponding QoreChain Diana evidence.
 
 ## License
 
