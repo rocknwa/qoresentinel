@@ -1,6 +1,6 @@
 # QoreSentinel API
 
-**FastAPI service for wallet-owned Solidity projects, VulnHunter audit jobs, QoreScan inventories and Diana testnet settlement.**
+**FastAPI service for wallet-owned Solidity projects, QoreSentinel's twelve-specialist audit workflow, QoreScan inventories and Diana testnet settlement.**
 
 The backend is the trust boundary of QoreSentinel. The Next.js client can initiate an audit or submit a payment hash, but the API determines who owns the source, whether an audit is permitted, what the chain actually confirmed, and which records the requesting wallet may read.
 
@@ -44,9 +44,9 @@ Saved project source is associated with the authenticated wallet in the `project
 
 ### The twelve-specialist audit
 
-Audit creation requires a saved project with Solidity source, the enabled VulnHunter bridge and at least one configured cloud LLM provider. The reservation is performed server-side before a worker is scheduled. PostgreSQL advisory transaction locks protect each wallet's quota and pending-job reservation against concurrent requests.
+Audit creation requires a saved project with Solidity source, QoreSentinel's enabled Python audit orchestration and at least one configured cloud LLM provider. The reservation is performed server-side before a worker is scheduled. PostgreSQL advisory transaction locks protect each wallet's quota and pending-job reservation against concurrent requests.
 
-The job begins at `queued`, moves to `running` and finishes as `completed` or `failed`. The `audit/` engine runs twelve specialist analyses, reports completed-agent counts and hands results to the final judge. The persisted output comprises the Markdown report and raw per-agent results. `app/findings.py` extracts report-derived finding summaries, which remain labeled **unverified**.
+The job begins at `queued`, moves to `running` and finishes as `completed` or `failed`. The purpose-built Python modules in `audit/` coordinate twelve specialist analyses, track completed-agent counts and pass the results to the final judge. The persisted output comprises the Markdown report and raw per-agent results. `app/findings.py` extracts report-derived finding summaries, which remain labeled **unverified**.
 
 Audit IDs persist independently of the browser. The report endpoint, job history and per-audit assistant conversations are all constrained to the wallet that owns the job.
 

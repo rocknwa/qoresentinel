@@ -2,7 +2,7 @@
 
 **Smart-contract security analysis and post-quantum cryptographic inventory on QoreChain.**
 
-QoreSentinel brings two distinct security workflows into one wallet-connected workspace: a twelve-specialist Solidity audit led by the VulnHunter engine, and a cryptographic inventory produced by the QoreScan engine. The former examines contract behavior and reports potential vulnerabilities; the latter identifies cryptographic dependencies, classifies quantum-migration exposure, and produces a machine-readable Cryptographic Bill of Materials (CBOM).
+QoreSentinel combines two security workflows in one wallet-connected workspace: its own twelve-specialist Solidity audit pipeline and a cryptographic inventory generated through the QoreScan engine. The former examines contract behavior and reports potential vulnerabilities; the latter identifies cryptographic dependencies, classifies quantum-migration exposure, and produces a machine-readable Cryptographic Bill of Materials (CBOM).
 
 QoreSentinel also connects those source-level findings with **chain-reported hybrid-signature evidence on the QoreChain Diana testnet**. It is a working demonstration of how contract review, cryptographic visibility, and verifiable network activity can coexist without representing an inventory scan as a security certification.
 
@@ -13,7 +13,7 @@ QoreSentinel also connects those source-level findings with **chain-reported hyb
 
 | Workspace capability | What happens | What the user receives |
 | --- | --- | --- |
-| **Smart-contract audit** | Saved Solidity source runs through twelve VulnHunter specialist agents and a final report synthesis. | Job progress, a Markdown security report, agent output, and report-derived finding summaries. |
+| **Smart-contract audit** | Saved Solidity source is analyzed by QoreSentinel's twelve specialist agents and final judge. | Job progress, a Markdown security report, agent output, and report-derived finding summaries. |
 | **PQC Readiness** | QoreScan inventories cryptographic references from a saved project, pasted Solidity, or uploaded source files/ZIP. | Algorithm classifications, source-line evidence, a CycloneDX 1.6 CBOM, and a readiness report. |
 | **Hybrid-signature proof** | QoreX authorizes a small Diana-native self-transfer; QoreSentinel inspects the chain response for the hybrid-signature extension and successful verification event. | A transaction hash and chain-reported hybrid-verification evidence. |
 | **Audit history** | Completed reports, running jobs, and per-audit discussions are retained against the authenticated wallet. | Private audit URLs and the ability to reopen a report without running it again. |
@@ -61,7 +61,7 @@ Next.js 15 / React 19 interface (Vercel)
 FastAPI service (Render)
     |-- QoreX wallet challenge and session verification
     |-- Solidity ingestion, source validation, project ownership
-    |-- Audit job tracking -> VulnHunter 12-agent workflow -> cloud LLM provider
+    |-- Audit job tracking -> QoreSentinel 12-specialist orchestration -> cloud LLM provider
     |-- QoreScan CLI -> cryptographic inventory / CycloneDX CBOM
     |-- Native QOR and fUSD verification -> QoreChain Diana REST API
     |-- Wallet-scoped billing, usage, audit history and discussions
@@ -75,7 +75,7 @@ The frontend owns presentation, routing, file selection, transaction approval, a
 | Repository area | Role |
 | --- | --- |
 | [`frontend/`](frontend/README.md) | Workspace routes, QoreX interaction, QoreScan presentation, audit progress and billing UI. |
-| [`backend/`](backend/README.md) | API, persistent state, VulnHunter bridge, QoreScan execution, QoreChain evidence and payment verification. |
+| [`backend/`](backend/README.md) | API, persistent state, twelve-specialist audit orchestration, QoreScan execution, QoreChain evidence and payment verification. |
 | `backend/audit/` | Specialist-agent orchestration, report synthesis, prompts and cloud-provider adapters. |
 | `backend/tests/` | Authentication, billing, job history, direct API authorization, PQC, wallet session and scanner regression tests. |
 
@@ -90,4 +90,4 @@ The frontend owns presentation, routing, file selection, transaction approval, a
 
 ## License
 
-QoreSentinel's original project code is offered under the [MIT License](LICENSE). External dependencies, including QoreScan and the QoreX integration packages, retain their own licenses and attribution requirements.
+QoreSentinel is released under the [MIT License](LICENSE).

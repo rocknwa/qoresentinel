@@ -2,7 +2,7 @@
 
 **Wallet-connected Solidity security analysis, PQC inventory, audit history and QoreChain testnet billing.**
 
-The QoreSentinel frontend is a Next.js 15 / React 19 workspace deployed on Vercel. It presents two different source-analysis products—VulnHunter audits and QoreScan cryptographic inventories—alongside native QoreX wallet interactions and blockchain evidence. State that affects ownership, payment credit, job execution or usage is checked by the FastAPI backend, not trusted from the browser.
+The QoreSentinel frontend is a Next.js 15 / React 19 workspace deployed on Vercel. It presents QoreSentinel's twelve-specialist contract audits and QoreScan cryptographic inventories alongside native QoreX wallet interactions and blockchain evidence. State that affects ownership, payment credit, job execution or usage is checked by the FastAPI backend, not trusted from the browser.
 
 **Live workspace:** https://qoresentinel.vercel.app  
 **Network:** QoreChain Diana testnet (`qorechain-diana` / EVM chain ID `9800`)
@@ -19,7 +19,7 @@ Wallet secrets never enter QoreSentinel. Transaction approvals happen inside Qor
 
 ### New Audit → Progress → Results
 
-The **New Audit** view accepts pasted Solidity, multiple `.sol` files or a ZIP of Solidity sources. Files are sent to a wallet-owned project and submitted to the configured VulnHunter audit engine. The progress page polls the persisted job and shows the completed-agent count from the twelve-specialist backend workflow.
+The **New Audit** view accepts pasted Solidity, multiple `.sol` files or a ZIP of Solidity sources. Files are sent to a wallet-owned project and submitted to QoreSentinel's configured audit workflow. The progress page polls the persisted job and shows the completed-agent count from the twelve-specialist backend workflow.
 
 When the final report is available, **Audit Results** renders the Markdown report, report-derived finding summaries and agent outputs. Generated severity labels are presented as unverified rather than as independently validated exploits.
 
@@ -79,7 +79,7 @@ The browser does not directly hold the cloud LLM credentials, the signing key us
 
 ## What the interface reports—and what it does not
 
-- A **completed VulnHunter audit** means the configured specialist-and-judge workflow returned a report, not that every finding has been exploited, reproduced or independently verified.
+- A **completed QoreSentinel audit** means the specialist-and-judge workflow returned a report, not that every finding has been exploited, reproduced or independently verified.
 - A **QoreScan inventory** shows detected source-level cryptographic references and transition classifications. It is not a certification that the contract, application or connected chain is quantum-safe.
 - A **verified hybrid proof** means the chain reported an appropriate transaction and verification event. It is not a local cryptographic re-verification by the web application.
 - **Free versus Pro allowances** are visible in the UI but are enforced by FastAPI. The default rolling 24-hour audit allowance is 2 for Free and 10 for Pro; actual limits are server-configurable.
