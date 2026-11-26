@@ -18,6 +18,13 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Verify QoreScan binary and CycloneDX output
+        run: |
+          qorescan version
+          mkdir -p /tmp/qorescan-contracts
+          printf 'pragma solidity ^0.8.20; contract Sample { function h(bytes memory x) public pure returns (bytes32) { return keccak256(x); } }\n' > /tmp/qorescan-contracts/Sample.sol
+          qorescan solidity /tmp/qorescan-contracts --out /tmp/qorescan-smoke.cbom.json
+          python -c "import json; d=json.load(open('/tmp/qorescan-smoke.cbom.json')); assert d['bomFormat']=='CycloneDX' and d['specVersion']=='1.6' and len(d['components'])>0"
       - name: Run backend tests
         run: python -m pytest -q
 
