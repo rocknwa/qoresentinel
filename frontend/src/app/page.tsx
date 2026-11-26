@@ -121,7 +121,10 @@ export default function Home(){
      setProject(existing||{id:loaded.project_id,name:matching?.project_name||'Saved audit'});
      setAudit(loaded);setSelectedAuditId(jobId);setAuditQuestion('');setAuditMessages([]);
      const messages=await api.auditMessages(jobId);
-     setAuditMessages(messages.messages);navigateAudit(jobId);
+     setAuditMessages(messages.messages);
+     if(loaded.status==='queued'||loaded.status==='running'){
+       setJobId(jobId);setAgentDone(loaded.completed_agents);navigateAudit(jobId,'audit-progress');
+     }else navigateAudit(jobId);
    }catch(e){setLoadHistoryError(e instanceof Error?e.message:'Could not open saved audit');}
    finally{setLoadingHistory(false);}
  }
@@ -176,11 +179,16 @@ export default function Home(){
      setLoadingHistory(true);
      try{
        const result=await api.audit(id);
-       const messages=await api.auditMessages(id);
+       const [messages,storedProject]=await Promise.all([
+         api.auditMessages(id),api.getProject(result.project_id).catch(()=>null)
+       ]);
        if(!active)return;
        setAudit(result);setSelectedAuditId(id);setAuditMessages(messages.messages);
-       setProject({id:result.project_id,name:allAudits.find(x=>x.id===id)?.project_name||'Saved audit'});
-       setView('audit-results');setLoadHistoryError('');
+       setProject(storedProject||{id:result.project_id,name:allAudits.find(x=>x.id===id)?.project_name||'Saved audit'});
+       if(result.status==='queued'||result.status==='running'){
+         setJobId(id);setAgentDone(result.completed_agents);setView('audit-progress');
+       }else setView('audit-results');
+       setLoadHistoryError('');
      }catch(e){if(active)setLoadHistoryError(e instanceof Error?e.message:'Audit not found or access denied');}
      finally{if(active)setLoadingHistory(false);}
    };
@@ -371,9 +379,11 @@ export default function Home(){
    try{setAssistantAnswer((await api.ask(project.id,question)).answer);}catch(e){setError(e instanceof Error?e.message:'Assistant unavailable');}finally{setBusy(false);}}
 
  useEffect(()=>{api.health().then(()=>setBackend('online')).catch(()=>setBackend('offline'))},[]);
- function navigateAudit(jobId:string){
-   window.history.pushState({audit:jobId},'',auditReportPath(jobId));
-   setView('audit-results');setMenuOpen(false);setError('');
+ function navigateAudit(jobId:string,stage:'audit-results'|'audit-progress'='audit-results'){
+   if(window.location.pathname!==auditReportPath(jobId)){
+     window.history.pushState({audit:jobId},'',auditReportPath(jobId));
+   }
+   setView(stage);setMenuOpen(false);setError('');
  }
  function navigate(next:View){
    const destination=VIEW_PATHS[next];
@@ -388,7 +398,7 @@ export default function Home(){
  setBusy(true);setAudit(null);setSelectedAuditId('');setAuditMessages([]);setAgentDone(0);navigate('audit-progress');try{
   const created=await api.createProject(projectName.trim()||'Untitled project');setProject(created);setRecentProjects(prev=>[created,...prev]);
   if(mode==='paste')await api.pasteSource(created.id,source);else{if(!files.length)throw new Error('Select at least one .sol file or a ZIP project.');await api.upload(created.id,files);}
-  const job=await api.runAudit(created.id);setJobId(job.id);
+  const job=await api.runAudit(created.id);setJobId(job.id);navigateAudit(job.id,'audit-progress');
   setNotice('Your source was accepted. The twelve-agent security audit is queued.');
  }catch(e){setBusy(false);setError(e instanceof Error?e.message:'Unexpected audit error');}}
  function saveReport(){if(!audit?.report_markdown)return;const url=URL.createObjectURL(new Blob([audit.report_markdown],{type:'text/markdown'}));const a=document.createElement('a');a.href=url;a.download=`qoresentinel-audit-${project?.id||'report'}.md`;a.click();URL.revokeObjectURL(url)}
