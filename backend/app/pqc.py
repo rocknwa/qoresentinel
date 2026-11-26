@@ -35,27 +35,76 @@ def analyze_source(files:dict[str,str]):
     return {'status':'completed','method':'source-heuristic','evidence':matches,'components':len(components),'cbom':cbom,
        'limitations':'Source references only. This is not a QoreScan run, cryptographic validation, or proof of quantum safety. Imports may be unresolved.'}
 
+def summarize_cbom(cbom:dict)->dict:
+    """Preserve QoreScan classification and source occurrences without claiming a security audit."""
+    categories={}
+    evidence=[]
+    for item in cbom.get('components',[]):
+        if not isinstance(item,dict) or item.get('type')!='cryptographic-asset':
+            continue
+        props={p['name']:p.get('value','') for p in item.get('properties',[])
+               if isinstance(p,dict) and isinstance(p.get('name'),str)}
+        classification=props.get('qorescan:classification','unknown')
+        categories[classification]=categories.get(classification,0)+1
+        name=item.get('name','Unnamed asset')
+        for occ in (item.get('evidence') or {}).get('occurrences',[]):
+            if not isinstance(occ,dict):continue
+            evidence.append({'file':str(occ.get('location') or 'network'),
+                'line':int(occ.get('line') or 0),
+                'excerpt':str(occ.get('additionalContext') or occ.get('symbol') or '')[:300],
+                'algorithm':name,'classification':classification,
+                'confidence':'scanner-observation','standard':props.get('qorescan:standard',''),
+                'transition':props.get('qorescan:transition','')})
+    return {'risk_summary':categories,'evidence':evidence[:250],
+            'evidence_truncated':len(evidence)>250}
+
 def scan(files:dict[str,str]):
-    """Use installed QoreScan CLI if explicitly configured; otherwise label heuristic output."""
+    """Run the official QoreScan 0.1.0 CLI when installed, never execute submitted Solidity."""
     import json
     import os
+    import shutil
     import subprocess
     import tempfile
     from pathlib import Path
-    executable=os.getenv('QORESCAN_BIN','').strip()
-    if not executable:return analyze_source(files)
+    executable=os.getenv('QORESCAN_BIN','').strip() or shutil.which('qorescan')
+    if not executable:
+        return analyze_source(files)
+    if not files:raise ValueError('No Solidity source provided')
     with tempfile.TemporaryDirectory(prefix='qs-pqc-') as base:
         src=Path(base)/'sources';src.mkdir()
         for name,body in files.items():
-            # Ingestion already validates paths. Defend again at tool boundary.
-            p=(src/name).resolve()
-            if not p.is_relative_to(src.resolve()):raise ValueError('Unsafe source filename')
-            p.parent.mkdir(parents=True,exist_ok=True);p.write_text(body,encoding='utf-8')
-        output=Path(base)/'scan.json'
-        result=subprocess.run([executable,'solidity',str(src),'--out',str(output)],
-                              capture_output=True,text=True,timeout=45,check=False)
-        if result.returncode!=0:raise RuntimeError('QoreScan failed (check server logs)')
+            target=(src/name).resolve()
+            if not target.is_relative_to(src.resolve()) or target.suffix.lower()!='.sol':
+                raise ValueError('Invalid Solidity source path')
+            target.parent.mkdir(parents=True,exist_ok=True)
+            target.write_text(body,encoding='utf-8')
+        output=Path(base)/'qorescan.cbom.json'
+        network=os.getenv('QORE_QORESCAN_NETWORK','').lower().strip()
+        if network not in ('','testnet'):raise ValueError('Unsupported QoreScan network')
+        cmd=([executable,'scan','--network','testnet','--solidity',str(src)]
+             if network=='testnet' else [executable,'solidity',str(src)])
+        cmd+=['--out',str(output)]
+        result=subprocess.run(cmd,capture_output=True,text=True,timeout=70,check=False)
+        if result.returncode!=0:
+            raise RuntimeError('QoreScan scan failed')
+        if not output.exists() or output.stat().st_size>12_000_000:
+            raise RuntimeError('Invalid QoreScan CBOM')
         cbom=json.loads(output.read_text(encoding='utf-8'))
-    if cbom.get('bomFormat')!='CycloneDX':raise RuntimeError('QoreScan did not return CycloneDX')
-    return {'status':'completed','method':'qorescan-cli','cbom':cbom,'components':len(cbom.get('components',[])),
-            'evidence':[],'limitations':'Cryptographic inventory only; not a certification of quantum safety.'}
+        if (not isinstance(cbom,dict) or cbom.get('bomFormat')!='CycloneDX'
+                or cbom.get('specVersion')!='1.6' or not isinstance(cbom.get('components'),list)):
+            raise RuntimeError('QoreScan produced an invalid CycloneDX CBOM')
+        report=Path(base)/'qorescan-report.md'
+        markdown=''
+        report_cmd=[executable,'report','--framework','nis','--cbom',str(output),'--out',str(report)]
+        try:
+            report_run=subprocess.run(report_cmd,capture_output=True,text=True,timeout=20,check=False)
+            if report_run.returncode==0 and report.exists() and report.stat().st_size<2_000_000:
+                markdown=report.read_text(encoding='utf-8')
+        except (OSError,subprocess.TimeoutExpired):
+            pass
+    summary=summarize_cbom(cbom)
+    return {'status':'completed','method':'qorescan-0.1.0'+('-diana' if network else '-solidity'),
+            'cbom':cbom,'components':len(cbom.get('components',[])),
+            'evidence':summary['evidence'],'risk_summary':summary['risk_summary'],
+            'evidence_truncated':summary['evidence_truncated'],'report_markdown':markdown,
+            'limitations':'QoreScan inventory and risk classification are indicators, not a full audit or certification. Uploaded dependencies may be unresolved.'}
