@@ -1,8 +1,8 @@
 # QoreSentinel API
 
-**FastAPI service for wallet-owned Solidity projects, QoreSentinel's twelve-specialist audit workflow, QoreScan inventories and Diana testnet settlement.**
+**From contract source to security intelligence, cryptographic visibility, and verified QoreChain activity.**
 
-The backend is the trust boundary of QoreSentinel. The Next.js client can initiate an audit or submit a payment hash, but the API determines who owns the source, whether an audit is permitted, what the chain actually confirmed, and which records the requesting wallet may read.
+The QoreSentinel API connects the 12-specialist audit workflow, QoreScan cryptographic inventory, wallet authentication, saved reports, and Diana testnet payments. A single FastAPI service processes Solidity submissions, coordinates analyses, maintains wallet-specific records, and verifies the network events that underpin wallet access and subscriptions.
 
 The hosted application uses **FastAPI + SQLAlchemy + PostgreSQL** (Supabase), with the service deployed on Render. SQLite remains the local/test storage backend. The audit orchestration and QoreScan executable run server-side; cloud provider credentials and billing configuration never belong in the browser.
 
@@ -42,11 +42,11 @@ Solidity ingestion applies a controlled source-text processing pipeline with fil
 
 Saved project source is associated with the authenticated wallet in the `projects` table. Temporary source submitted through the standalone PQC endpoints is not created as a project.
 
-### The twelve-specialist audit
+### 12-specialist security analysis
 
-Audit creation requires a saved project with Solidity source, QoreSentinel's enabled Python audit orchestration and at least one configured cloud LLM provider. The reservation is performed server-side before a worker is scheduled. PostgreSQL advisory transaction locks protect each wallet's quota and pending-job reservation against concurrent requests.
+Audit creation requires a saved project with Solidity source, the configured Python audit pipeline and at least one configured cloud LLM provider. The reservation is performed server-side before a worker is scheduled. PostgreSQL advisory transaction locks protect each wallet's quota and pending-job reservation against concurrent requests.
 
-The job begins at `queued`, moves to `running` and finishes as `completed` or `failed`. The purpose-built Python modules in `audit/` coordinate twelve specialist analyses, track completed-agent counts and pass the results to the final judge. The persisted output comprises the Markdown report and raw per-agent results. `app/findings.py` extracts report-derived finding summaries and associates them with their evidence status for the user interface.
+The job begins at `queued`, moves to `running` and finishes as `completed` or `failed`. The Python audit modules in `audit/` coordinate twelve specialist analyses, track completed-agent counts, and pass the results to the final judge. The persisted output comprises the Markdown report and raw per-agent results. `app/findings.py` extracts report-derived finding summaries and associates them with their evidence status for the user interface.
 
 Audit IDs persist independently of the browser. The report endpoint, job history and per-audit assistant conversations are all constrained to the wallet that owns the job.
 

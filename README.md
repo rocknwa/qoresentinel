@@ -1,27 +1,29 @@
 # QoreSentinel
 
-**Smart-contract security analysis and post-quantum cryptographic inventory on QoreChain.**
+**Smart-contract auditing meets post-quantum readiness.**
 
-QoreSentinel combines two security workflows in one wallet-connected workspace: its own twelve-specialist Solidity audit pipeline and a cryptographic inventory generated through the QoreScan engine. The former examines contract behavior and reports potential vulnerabilities; the latter identifies cryptographic dependencies, classifies quantum-migration exposure, and produces a machine-readable Cryptographic Bill of Materials (CBOM).
+Every smart contract raises two security questions: *What can go wrong in its logic?* And *which cryptographic systems does it depend on?* QoreSentinel brings both answers into one wallet-connected workspace on QoreChain.
 
-QoreSentinel connects those source-level findings with **chain-reported hybrid-signature evidence on the QoreChain Diana testnet**. Audit intelligence, cryptographic asset visibility, wallet identity, and verifiable network activity come together in one integrated security workspace.
+With **12 specialist security agents and a final judge**, QoreSentinel analyzes Solidity contracts and delivers detailed findings with source evidence. Alongside the audit, **QoreScan-powered PQC Readiness** identifies cryptographic dependencies, highlights quantum-vulnerable algorithms, and generates a CycloneDX 1.6 Cryptographic Bill of Materials (CBOM). **QoreX and QoreChain Diana** complete the experience with wallet-based access, hybrid-signature transaction evidence, and testnet fUSD subscriptions.
+
+From source submission to security reporting, cryptographic inventory, and on-chain verification, QoreSentinel gives builders a connected view of their contracts.
 
 **Application:** https://qoresentinel.vercel.app  
 **Network:** QoreChain Diana testnet (`qorechain-diana`, EVM chain ID `9800`)
 
-## The product
+## What QoreSentinel delivers
 
 | Workspace capability | What happens | What the user receives |
 | --- | --- | --- |
-| **Smart-contract audit** | Saved Solidity source is analyzed by QoreSentinel's twelve specialist agents and final judge. | Job progress, a Markdown security report, agent output, and report-derived finding summaries. |
+| **Smart-contract audit** | Twelve specialist security agents examine Solidity source and a final judge consolidates the findings. | Job progress, a Markdown security report, agent output, and report-derived finding summaries. |
 | **PQC Readiness** | QoreScan inventories cryptographic references from a saved project, pasted Solidity, or uploaded source files/ZIP. | Algorithm classifications, source-line evidence, a CycloneDX 1.6 CBOM, and a readiness report. |
 | **Hybrid-signature proof** | QoreX authorizes a small Diana-native self-transfer; QoreSentinel inspects the chain response for the hybrid-signature extension and successful verification event. | A transaction hash and chain-reported hybrid-verification evidence. |
 | **Audit history** | Completed reports, running jobs, and per-audit discussions are retained against the authenticated wallet. | Private audit URLs and the ability to reopen a report without running it again. |
 | **Billing and usage** | The API applies wallet-scoped Free and Pro limits. Native fUSD payments become subscriptions only after the transaction is verified on-chain. | Current plan, remaining audit allowance, pending checkout state, and verified transaction activity. |
 
-## How the workflows connect
+## The experience
 
-### 1. From Solidity source to an audit report
+### Audit a smart contract
 
 A QoreX wallet establishes the workspace identity. A Solidity project is created from pasted source, individual `.sol` files, or a ZIP containing Solidity contracts. The submitted files become part of that wallet's saved project.
 
@@ -29,7 +31,7 @@ Starting an audit creates a persistent job ID. The API reserves one of the walle
 
 A report remains accessible through its private `/audits/{audit-id}` URL. The same wallet can reopen saved reports and discussion threads at any time. Server-side ownership checks keep audit history and report access private to the authenticated wallet.
 
-### 2. From cryptographic source references to a CBOM
+### Map post-quantum exposure
 
 PQC Readiness is a separate workflow. It accepts a previously saved project, newly pasted Solidity, or uploaded Solidity files/ZIPs. QoreScan examines the source and inventories algorithms such as ECDSA, Keccak-256, and SHA-256, including the file and line associated with each detection.
 
@@ -37,7 +39,7 @@ The output includes a **CycloneDX 1.6 CBOM**, QoreScan classification and transi
 
 **Unlimited, on-demand PQC analysis is independent of paid auditing.** Saved projects can be rescanned, while pasted and uploaded sources run as temporary, history-free scans. Each run produces downloadable CBOM and readiness-report outputs for further analysis and sharing.
 
-### 3. From QoreX approval to chain evidence
+### Verify hybrid-signature activity
 
 QoreSentinel uses QoreX's native `qor1` wallet interface on Diana. Native authentication begins with a short-lived challenge and a wallet-approved 1 uqor self-transfer containing the challenge memo. The backend checks the sender, recipient, amount, memo, confirmation, and chain-reported hybrid verification before issuing a one-hour session.
 
@@ -45,7 +47,7 @@ The separate hybrid-proof action uses another wallet-approved 1 uqor self-transf
 
 An authenticated browser session can be restored after refresh through a secure, HTTP-only cookie. Locked-wallet and network-mismatch states are surfaced in the interface; compatible QoreX versions may display their own unlock prompt when wallet access is requested.
 
-### 4. From a native fUSD transfer to Pro access
+### Access Free and Pro plans
 
 The billing screen retrieves the server-defined testnet fUSD amount and treasury destination before requesting a QoreX-approved transfer. The resulting transaction hash is associated with a pending payment intent, enabling seamless checkout recovery after a page refresh.
 
@@ -61,7 +63,7 @@ Next.js 15 / React 19 interface (Vercel)
 FastAPI service (Render)
     |-- QoreX wallet challenge and session verification
     |-- Solidity ingestion, source validation, project ownership
-    |-- Audit job tracking -> QoreSentinel 12-specialist orchestration -> cloud LLM provider
+    |-- Audit job tracking -> 12-specialist audit + final judge -> cloud LLM provider
     |-- QoreScan CLI -> cryptographic inventory / CycloneDX CBOM
     |-- Native QOR and fUSD verification -> QoreChain Diana REST API
     |-- Wallet-scoped billing, usage, audit history and discussions

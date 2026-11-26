@@ -1,13 +1,15 @@
 # QoreSentinel Workspace
 
-**Wallet-connected Solidity security analysis, PQC inventory, audit history and QoreChain testnet billing.**
+**One workspace for smart-contract audits, post-quantum readiness, and on-chain security evidence.**
 
-The QoreSentinel frontend is a Next.js 15 / React 19 workspace deployed on Vercel. It presents QoreSentinel's twelve-specialist contract audits and QoreScan cryptographic inventories alongside native QoreX wallet interactions and blockchain evidence. FastAPI provides the authenticated backend for ownership, audit execution, payment confirmation, and subscription usage, while the Next.js interface coordinates the complete user experience.
+QoreSentinel takes users from a Solidity contract to a detailed security report, a cryptographic inventory, and QoreChain hybrid-signature evidence. The workspace brings together 12-specialist contract analysis, QoreScan-generated CBOMs, private audit history, and QoreX-powered testnet activity without splitting the process across separate tools.
+
+Built with Next.js 15, React 19, and TypeScript, the interface connects to a FastAPI backend that manages audit execution, wallet authentication, report access, and subscriptions.
 
 **Live workspace:** https://qoresentinel.vercel.app  
 **Network:** QoreChain Diana testnet (`qorechain-diana` / EVM chain ID `9800`)
 
-## The workspace journey
+## From wallet connection to security insight
 
 ### Wallet connection
 
@@ -19,7 +21,7 @@ QoreX manages wallet secrets and transaction approvals inside its extension, whi
 
 ### New Audit → Progress → Results
 
-The **New Audit** view accepts pasted Solidity, multiple `.sol` files or a ZIP of Solidity sources. Files are sent to a wallet-owned project and submitted to QoreSentinel's configured audit workflow. The progress page polls the persisted job and shows the completed-agent count from the twelve-specialist backend workflow.
+The **New Audit** view accepts pasted Solidity, multiple `.sol` files, or a ZIP of Solidity sources. Each submission becomes a wallet-linked project and enters the twelve-specialist security analysis workflow. The progress page polls the persisted job and shows the completed-agent count from the twelve-specialist backend workflow.
 
 When the final report is available, **Audit Results** renders the Markdown report, report-derived finding summaries and agent outputs. Reports bring together findings, severity indicators, source evidence, agent outputs, and the final analysis in a single results view.
 
