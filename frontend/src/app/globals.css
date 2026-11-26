@@ -54,3 +54,9 @@
 .checkout-funding-actions{display:flex;flex-wrap:wrap;gap:8px}
 .checkout-funding-error{color:#ffb2b9;font-size:13px;margin:12px 0 0}
 @media(max-width:640px){.checkout-funding-data{grid-template-columns:1fr}.checkout-funding-actions{width:100%}}
+
+/* Persisted checkout recovery */
+.checkout-recovery{margin:18px 0;padding:16px;border:1px solid #314c63;background:#102031;border-radius:8px}
+.checkout-recovery .history-list{margin:12px 0}
+.checkout-recovery .history-item{background:#13243a}
+.checkout-recovery .secondary{display:inline-flex;align-items:center;gap:6px}

@@ -1,7 +1,7 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
 import {Activity,ArrowRight,Bell,BookOpen,CheckCircle2,ChevronDown,CircleAlert,Clock3,CloudUpload,Code2,CreditCard,Download,FileCode2,FileSearch,FileText,Fingerprint,FolderOpen,HelpCircle,Hexagon,LayoutDashboard,LockKeyhole,Menu,MessageSquareText,Plus,Radio,RefreshCcw,Search,Settings2,Shield,ShieldAlert,ShieldCheck,Sparkles,Upload,Wallet, X} from 'lucide-react';
-import {api,setAccessToken,type Audit,type AuditSummary,type AuditMessage,type ChainTx,type Project,type PqcScan,type TxEvidence,type PaymentIntent,type PlanQuote} from '@/lib/api';
+import {api,setAccessToken,type Audit,type AuditSummary,type AuditMessage,type ChainTx,type Project,type PqcScan,type TxEvidence,type PaymentIntent,type PendingPaymentIntent,type PlanQuote} from '@/lib/api';
 import {connectQoreX,loginProof,nativeSend,sendHybridProof,FAUCET_URL} from '@/lib/wallet';
 
 type View='overview'|'new-audit'|'audit-progress'|'audit-results'|'audit-history'|'transaction-history'|'assistant'|'pqc'|'billing'|'settings';
@@ -38,6 +38,10 @@ export default function Home(){
  const [pqcScan,setPqcScan]=useState<PqcScan|null>(null);
  const [txHash,setTxHash]=useState('');const [hybridSendStatus,setHybridSendStatus]=useState('');const [txEvidence,setTxEvidence]=useState<TxEvidence|null>(null);
  const [paymentIntent,setPaymentIntent]=useState<PaymentIntent|null>(null);
+ const [pendingPayments,setPendingPayments]=useState<PendingPaymentIntent[]>([]);
+ const [pendingPaymentLoading,setPendingPaymentLoading]=useState(false);
+ const [pendingPaymentError,setPendingPaymentError]=useState('');
+ const [manualPaymentHash,setManualPaymentHash]=useState('');
  const [paymentHash,setPaymentHash]=useState('');const [paymentResult,setPaymentResult]=useState('');
  const [funding,setFunding]=useState<{quote:PlanQuote;fusdRaw:string;qorRaw:string}|null>(null);
  const [fundingLoading,setFundingLoading]=useState(false);
@@ -49,6 +53,33 @@ export default function Home(){
  }
 
  const [subscription,setSubscription]=useState<{plan:string;expires_at:number|null}|null>(null);
+ async function refreshPendingPayments(){
+   if(!signedIn)return;
+   setPendingPaymentLoading(true);setPendingPaymentError('');
+   try{
+     const response=await api.pendingIntents();setPendingPayments(response.intents);
+   }catch(err){setPendingPaymentError(err instanceof Error?err.message:'Could not retrieve pending payments');}
+   finally{setPendingPaymentLoading(false);}
+ }
+ function resumePayment(p:PendingPaymentIntent){
+   setPaymentIntent({...p,notice:'Pending testnet payment — verify the transaction on-chain before activating Pro.'});
+   setPaymentHash(p.tx_hash||'');setManualPaymentHash(p.tx_hash||'');
+   setPaymentResult(p.tx_hash?'Transaction recorded; verification is still required.':'Payment intent restored. Approve the transfer only if you have not already sent it.');
+   setFundingError('');setError('');
+ }
+ async function storePaymentHash(){
+   if(!paymentIntent||!manualPaymentHash.trim())return;
+   setBusy(true);setError('');
+   try{
+     const result=await api.broadcastPayment(paymentIntent.id,manualPaymentHash.trim());
+     setPaymentHash(result.tx_hash);
+     setManualPaymentHash(result.tx_hash);
+     setPaymentResult('Transaction hash saved. It is not yet verified or credited.');
+     await refreshPendingPayments();
+   }catch(err){setError(err instanceof Error?err.message:'Could not save transaction hash');}
+   finally{setBusy(false);}
+ }
+
  const [question,setQuestion]=useState('');const [assistantAnswer,setAssistantAnswer]=useState('');
  const [allAudits,setAllAudits]=useState<AuditSummary[]>([]);
  const [moreAudits,setMoreAudits]=useState(false);
@@ -108,6 +139,7 @@ export default function Home(){
    setAccessToken(token);setSignedIn(true);setPendingLogin(null);setNeedsFaucet(false);
    setNotice('QoreX native wallet authenticated on Diana testnet.');
    api.subscription().then(setSubscription).catch(()=>{});
+   api.pendingIntents().then(x=>setPendingPayments(x.intents)).catch(()=>{});
    api.listProjects().then(x=>setRecentProjects(x.projects)).catch(()=>{});
    api.audits().then(x=>{setAllAudits(x.audits);setMoreAudits(x.has_more)}).catch(()=>{});
    api.transactions().then(x=>{setTransactions(x.transactions);setMoreTransactions(x.has_more)}).catch(()=>{});
@@ -145,7 +177,8 @@ export default function Home(){
  function logout(){setSignedIn(false);setNativeAddress('');setGasBalance(null);setPendingLogin(null);
    setNeedsFaucet(false);setAccessToken('');setSubscription(null);setRecentProjects([]);
    setProject(null);setAudit(null);setPqcScan(null);setPaymentIntent(null);setPaymentHash('');setFunding(null);setFundingMessage('');setFundingError('');
-   setAllAudits([]);setTransactions([]);setMoreAudits(false);setMoreTransactions(false);setAuditMessages([]);setSelectedAuditId('');}
+   setAllAudits([]);setTransactions([]);setMoreAudits(false);setMoreTransactions(false);setAuditMessages([]);setSelectedAuditId('');
+   setPendingPayments([]);setPendingPaymentError('');setManualPaymentHash('');}
  useEffect(()=>{if(!jobId||!signedIn)return;
    let closed=false;
    const poll=async()=>{try{const status=await api.audit(jobId);if(closed)return;
@@ -249,7 +282,8 @@ export default function Home(){
      if(intent.amount_raw!==balance.quote.amount_raw||intent.denom!==balance.quote.denom){
        setPaymentIntent(null);setFundingError('The plan price changed during checkout. Refresh and try again.');return;
      }
-     setPaymentResult('');setPaymentIntent(intent);
+     setPaymentResult('');setPaymentIntent(intent);setManualPaymentHash('');
+     await refreshPendingPayments();
      setNotice('Payment details created. Review the recipient and approve the native fUSD transfer.');
    }catch(err){setFundingError(err instanceof Error?err.message:'Checkout unavailable');}
    finally{setBusy(false);}
@@ -264,15 +298,23 @@ export default function Home(){
        setFundingError('Payment details no longer match the configured plan. Start a new checkout.');return;
      }
      const result=await nativeSend(nativeAddress,paymentIntent.recipient,paymentIntent.denom,paymentIntent.amount_raw,paymentIntent.memo);
-     setPaymentHash(result.txHash);
-     setPaymentResult('Transaction submitted. Verify the hash on-chain to activate your plan.');
+     setPaymentHash(result.txHash);setManualPaymentHash(result.txHash);
+     setPaymentResult('Transaction broadcast. Saving its hash and checking confirmation…');
+     try{
+       await api.broadcastPayment(paymentIntent.id,result.txHash);
+       await refreshPendingPayments();
+       setPaymentResult('Transaction broadcast and saved. Verify it on-chain to activate Pro.');
+     }catch(saveErr){
+       setPaymentResult('Transaction broadcast, but the server could not save its hash. Copy the hash below and use Save transaction hash to retry.');
+       setError(saveErr instanceof Error?saveErr.message:'Could not persist transaction hash');
+     }
    }catch(err){setError(err instanceof Error?err.message:'Wallet declined or payment failed');}
    finally{setBusy(false);}
  }
  async function confirmPayment(){if(!paymentIntent||!paymentHash)return;setBusy(true);setError('');
    try{const result=await api.verifyPayment(paymentIntent.id,paymentHash);
      setPaymentResult(result.status==='paid'?'Payment verified. Your testnet plan is active.':`Awaiting chain confirmation: ${result.reason||'pending'}`);
-     if(result.status==='paid'){setSubscription(await api.subscription());refreshTransactions();}
+     if(result.status==='paid'){setSubscription(await api.subscription());refreshTransactions();setPendingPayments(prev=>prev.filter(x=>x.id!==paymentIntent.id));}
    }catch(e){setError(e instanceof Error?e.message:'Transfer verification failed');}finally{setBusy(false);}}
  async function askSecurityAssistant(){if(!project||!question.trim())return;setBusy(true);setError('');
    try{setAssistantAnswer((await api.ask(project.id,question)).answer);}catch(e){setError(e instanceof Error?e.message:'Assistant unavailable');}finally{setBusy(false);}}
@@ -280,7 +322,8 @@ export default function Home(){
  useEffect(()=>{api.health().then(()=>setBackend('online')).catch(()=>setBackend('offline'))},[]);
  function navigate(next:View){setView(next);setMenuOpen(false);setError('');setNotice('');setLoadHistoryError('');
    if(next==='audit-history')refreshAuditHistory();
-   if(next==='transaction-history'||next==='settings'||next==='overview')refreshTransactions();}
+   if(next==='transaction-history'||next==='settings'||next==='overview')refreshTransactions();
+   if(next==='billing')void refreshPendingPayments();}
  async function submitAudit(){setError('');setNotice('');if(!signedIn){setError('Sign in with QoreX Native to submit an audit.');return;}
  setBusy(true);setAudit(null);setSelectedAuditId('');setAuditMessages([]);setAgentDone(0);setView('audit-progress');try{
   const created=await api.createProject(projectName.trim()||'Untitled project');setProject(created);setRecentProjects(prev=>[created,...prev]);
@@ -353,7 +396,12 @@ export default function Home(){
    {!funding&&fundingLoading&&<p className="help-text">Checking fUSD and QOR balances on Diana testnet…</p>}
    {fundingError&&<p role="alert" className="checkout-funding-error">{fundingError}</p>}
    {fundingMessage&&<div className="checkout-funding-warning" role="status"><CircleAlert size={17}/><p>{fundingMessage}</p><div className="checkout-funding-actions"><a className="secondary" href={FAUCET_URL} target="_blank" rel="noreferrer">Open faucet <ArrowRight size={14}/></a><button className="secondary" onClick={()=>void navigator.clipboard.writeText(FAUCET_URL)}>Copy faucet link</button></div></div>}
- </div>}{!signedIn?<button className="primary" onClick={signInNative}><Wallet size={16}/> Sign in with QoreX</button>:<><div className="quick-grid"><button disabled={busy||fundingLoading||Boolean(paymentHash)||!funding||Boolean(fundingMessage)||Boolean(fundingError)} onClick={()=>checkout('pro')}><ShieldCheck/><strong>Pro — 30 days</strong><span>View and approve a testnet payment</span><ArrowRight size={15}/></button></div>{paymentIntent&&<div className="checkout-details"><div className="section-separator"/><div className="service-list"><div><span>Amount (fUSD)</span><strong>{paymentIntent.amount_fusd}</strong></div><div><span>Chain</span><strong>{paymentIntent.network}</strong></div><div><span>Recipient</span><span className="mono-address">{paymentIntent.recipient}</span></div><div><span>Payment window</span><span>{new Date(paymentIntent.expires_at*1000).toLocaleTimeString()}</span></div></div><button className="primary" disabled={busy||fundingLoading||Boolean(paymentHash)||Boolean(fundingMessage)||Boolean(fundingError)} onClick={sendPayment}><Wallet size={16}/> Approve native fUSD transfer</button>{paymentHash&&<><p className="help-text">Transaction: {paymentHash}</p><button className="secondary" disabled={busy} onClick={confirmPayment}><CheckCircle2 size={16}/> Verify payment on-chain</button></>}{paymentResult&&<div className="info-note"><Clock3 size={16}/>{paymentResult}</div>}</div>}</>}</section></>}
+ </div>}{signedIn&&<section className="checkout-recovery">
+  <div className="checkout-funding-head"><strong>Recover pending payment</strong><button className="secondary" onClick={()=>void refreshPendingPayments()} disabled={busy||pendingPaymentLoading}><RefreshCcw size={14}/>{pendingPaymentLoading?'Loading…':'Refresh pending payments'}</button></div>
+  <p className="help-text">Previously created checkout records are saved under your QoreX address. A recorded transaction is not counted as paid until verified on-chain.</p>
+  {pendingPaymentError&&<p role="alert" className="checkout-funding-error">{pendingPaymentError}</p>}
+  {pendingPayments.length>0?<div className="history-list">{pendingPayments.map(p=><div className="history-item" key={p.id}><div><strong>Pro · {p.amount_fusd} fUSD</strong><p>Expires {new Date(p.expires_at*1000).toLocaleString()} · {p.tx_hash?'Broadcast hash saved':'No broadcast hash saved'}</p></div><button className="secondary" disabled={busy} onClick={()=>resumePayment(p)}>Resume checkout <ArrowRight size={14}/></button></div>)}</div>:<p className="help-text">No open checkout records found.</p>}
+ </section>}{!signedIn?<button className="primary" onClick={signInNative}><Wallet size={16}/> Sign in with QoreX</button>:<><div className="quick-grid"><button disabled={busy||fundingLoading||Boolean(paymentHash)||!funding||Boolean(fundingMessage)||Boolean(fundingError)} onClick={()=>checkout('pro')}><ShieldCheck/><strong>Pro — 30 days</strong><span>View and approve a testnet payment</span><ArrowRight size={15}/></button></div>{paymentIntent&&<div className="checkout-details"><div className="section-separator"/><div className="service-list"><div><span>Amount (fUSD)</span><strong>{paymentIntent.amount_fusd}</strong></div><div><span>Chain</span><strong>{paymentIntent.network}</strong></div><div><span>Recipient</span><span className="mono-address">{paymentIntent.recipient}</span></div><div><span>Payment window</span><span>{new Date(paymentIntent.expires_at*1000).toLocaleTimeString()}</span></div></div><button className="primary" disabled={busy||fundingLoading||Boolean(paymentHash)||Boolean(fundingMessage)||Boolean(fundingError)} onClick={sendPayment}><Wallet size={16}/> Approve native fUSD transfer</button><div className="section-separator"/><label className="field-label" htmlFor="recover-payment-hash">Native transaction hash</label><input className="field" id="recover-payment-hash" placeholder="Paste a QoreX transaction hash if you already sent payment" value={manualPaymentHash} onChange={e=>setManualPaymentHash(e.target.value)}/><button className="secondary" disabled={busy||!manualPaymentHash.trim()} onClick={storePaymentHash}>Save transaction hash</button>{paymentHash&&<><p className="help-text">Transaction: {paymentHash}</p><button className="secondary" disabled={busy} onClick={confirmPayment}><CheckCircle2 size={16}/> Verify payment on-chain</button></>}{paymentResult&&<div className="info-note"><Clock3 size={16}/>{paymentResult}</div>}</div>}</>}</section></>}
  {view==='settings'&&<><Header kicker="MANAGEMENT / SETTINGS" title="Wallet & privacy" sub="Connected identities, security preferences, and data access."/><div className="settings-grid"><section className="panel"><div className="panel-head"><h2>Wallet connections</h2></div><div className="service-list"><div><span>QoreX Native</span><Status tone={nativeAddress?'good':'neutral'}>{nativeAddress?nativeAddress.slice(0,14)+'…':'Not connected'}</Status></div><div><span>QoreX authenticated session</span><Status tone={signedIn?'good':'neutral'}>{signedIn?nativeAddress.slice(0,14)+'…':'Not signed in'}</Status></div></div><button className="secondary" onClick={signedIn?logout:pendingLogin?verifyPendingLogin:signInNative}><LockKeyhole size={15}/>{signedIn?'Sign out of wallet session':pendingLogin?'Verify pending login':'Authenticate QoreX Native wallet'}</button></section><section className="panel"><div className="panel-head"><h2>Privacy & security</h2></div><p className="plain-copy">Never disclose recovery phrases or private keys. Security findings are AI-assisted and should be verified independently. Testnet tokens have no real monetary value.</p><button className="secondary" onClick={()=>navigate('transaction-history')}><Activity size={16}/> View transaction history</button><div className="service-list"><div><span>Service health</span><Status tone={backend==='online'?'good':'warn'}>{backend}</Status></div><div><span>Session</span><Status tone={signedIn?'good':'neutral'}>{signedIn?'Wallet signed in':'Signed out'}</Status></div></div></section></div></>}
  {error&&view!=='audit-progress'&&<div role="alert" className="floating-error"><CircleAlert size={18}/><span>{error}</span><button onClick={()=>setError('')} aria-label="Dismiss error"><X size={16}/></button></div>}
  </main></div></div>

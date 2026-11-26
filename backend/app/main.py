@@ -180,6 +180,14 @@ def qore_tx(tx_hash:str):return chain.transaction_evidence(tx_hash)
 def payment_plan_quote(plan:str,owner:str=Depends(require_wallet)):
     return payments.plan_quote(plan)
 
+@app.get('/api/v1/payments/intents')
+def pending_payment_intents(owner:str=Depends(require_wallet)):
+    return payments.list_pending(owner)
+
+@app.post('/api/v1/payments/intents/{intent_id}/broadcast')
+def broadcast_payment_intent(intent_id:str,payload:VerifyTransfer,owner:str=Depends(require_wallet)):
+    return payments.register_broadcast(intent_id,owner,payload.tx_hash)
+
 @app.post('/api/v1/payments/intents',status_code=201)
 def new_intent(payload:PlanInput,owner:str=Depends(require_wallet)):return payments.create(owner,payload.plan)
 

@@ -43,6 +43,12 @@ subscriptions = Table('subscriptions', metadata,
     Column('wallet', String(42), primary_key=True), Column('plan', String(30), nullable=False),
     Column('expires_at', Integer, nullable=False), Column('credited_intent', String(40), nullable=False))
 
+payment_broadcasts = Table('payment_broadcasts', metadata,
+    Column('intent_id', String(40), primary_key=True),
+    Column('owner', String(42), nullable=False),
+    Column('tx_hash', String(70), nullable=False),
+    Column('created_at', String(35), nullable=False))
+
 audit_messages = Table('audit_messages', metadata,
     Column('id', String(40), primary_key=True),
     Column('job_id', String(40), nullable=False),
@@ -145,6 +151,45 @@ def create_intent(wallet:str,plan:str,amount_raw:int,token:str,treasury:str,expi
     return data
 
 def get_intent(intent_id:str,wallet:str):return _one(intents,'id',intent_id,intents.c.wallet==wallet.lower())
+
+def pending_intents(wallet:str,now:int,limit:int=20):
+    """Recover open payment intents and known broadcast IDs for one wallet."""
+    stmt=(select(intents.c.id,intents.c.plan,intents.c.amount_raw,intents.c.token,
+                 intents.c.treasury,intents.c.expires_at,intents.c.status,
+                 payment_broadcasts.c.tx_hash.label('broadcast_hash'))
+          .select_from(intents.outerjoin(payment_broadcasts,
+                                        payment_broadcasts.c.intent_id==intents.c.id))
+          .where((intents.c.wallet==wallet.lower())&
+                 (intents.c.status=='pending')&
+                 (intents.c.expires_at>now))
+          .order_by(intents.c.created_at.desc(),intents.c.id.desc()).limit(limit))
+    with engine().connect() as conn:
+        rows=conn.execute(stmt).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def save_payment_broadcast(intent_id:str,owner:str,tx_hash:str,now:int):
+    """Store an unverified broadcast ID; never grant entitlement here."""
+    from sqlalchemy.exc import IntegrityError
+    with engine().begin() as conn:
+        row=conn.execute(select(intents.c.id,intents.c.status,intents.c.expires_at).where(
+            (intents.c.id==intent_id)&(intents.c.wallet==owner.lower()))).mappings().first()
+        if not row:return 'not-found'
+        if row['status']!='pending':return 'not-pending'
+        if row['expires_at']<=now:return 'expired'
+        existing=conn.execute(select(payment_broadcasts.c.tx_hash).where(
+            (payment_broadcasts.c.intent_id==intent_id)&
+            (payment_broadcasts.c.owner==owner.lower()))).first()
+        if existing:
+            return 'recorded' if existing[0]==tx_hash else 'conflict'
+        try:
+            with conn.begin_nested():
+                conn.execute(insert(payment_broadcasts).values(
+                    intent_id=intent_id,owner=owner.lower(),
+                    tx_hash=tx_hash,created_at=iso_now()))
+        except IntegrityError:return 'conflict'
+    return 'recorded'
+
 
 def mark_intent_paid(intent_id:str,owner:str,tx_hash:str,new_expiry:int):
     """Atomic idempotent crediting. Caller must have verified receipt from chain."""

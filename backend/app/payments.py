@@ -50,6 +50,27 @@ def create(wallet:str,plan:str):
         'expires_at':row['expires_at'],'status':'pending',
         'notice':'Testnet tokens only. A QoreX-approved native transfer is required.'}
 
+def list_pending(wallet:str):
+    payment_ready()
+    rows=storage.pending_intents(wallet,int(time.time()))
+    return {'intents':[{'id':row['id'],'plan':row['plan'],
+        'network':'qorechain-diana','chain_id':9800,'currency':'fUSD','decimals':6,
+        'denom':row['token'],'recipient':row['treasury'],
+        'amount_raw':row['amount_raw'],
+        'amount_fusd':f"{Decimal(row['amount_raw'])/Decimal(1_000_000):.6f}",
+        'memo':payment_memo(row['id']),
+        'expires_at':row['expires_at'],'status':row['status'],
+        'tx_hash':row['broadcast_hash']} for row in rows]}
+
+def register_broadcast(intent_id:str,wallet:str,tx_hash:str):
+    payment_ready()
+    normalized='0x'+chain._tx_hash(tx_hash)
+    state=storage.save_payment_broadcast(intent_id,wallet,normalized,int(time.time()))
+    if state=='not-found':raise HTTPException(404,'Payment intent not found')
+    if state in ('not-pending','expired'):raise HTTPException(409,'Payment intent is no longer active')
+    if state!='recorded':raise HTTPException(409,'Could not record the broadcast transaction')
+    return {'status':'broadcast','tx_hash':normalized,'verified':False}
+
 def verify(intent_id:str,wallet:str,tx_hash:str):
     treasury=payment_ready()
     row=storage.get_intent(intent_id,wallet)
