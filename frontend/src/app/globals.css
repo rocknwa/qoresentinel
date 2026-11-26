@@ -72,3 +72,6 @@
 .wallet-onboarding-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
 .wallet-onboarding-actions .secondary,.wallet-onboarding-actions .primary{display:inline-flex;align-items:center;justify-content:center;gap:7px;text-decoration:none;min-height:38px}
 @media(max-width:640px){.wallet-onboarding-actions>*{width:100%}}
+
+/* Sidebar sections are navigable URLs, including open-in-new-tab. */
+.nav-item{text-decoration:none;cursor:pointer}
