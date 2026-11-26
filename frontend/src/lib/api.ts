@@ -6,7 +6,7 @@ export type ReportFinding={severity:string;title:string;evidence:string;source:s
 export type Audit={id:string;project_id:string;created_at?:string;status:'queued'|'running'|'completed'|'failed';report_markdown:string;agents:unknown[];findings:ReportFinding[];findings_status:string;completed_agents:number;total_agents:number;error?:string};
 export type PqcScan={status:string;method:string;components:number;evidence:Array<{file:string;line:number;algorithm:string;classification:string;excerpt:string;confidence:string;standard?:string;transition?:string}>;risk_summary?:Record<string,number>;report_markdown?:string;cbom:Record<string,unknown>;limitations:string};
 export type TxEvidence={found:boolean;tx_hash:string;network:string;success?:boolean;hybrid_layer_present?:boolean;chain_reports_verified?:boolean;height?:string;verification_method?:string};
-export type UsageWindow={plan:string;expires_at:number|null;window:string;audits:{used:number;limit:number;remaining:number};assistant:{used:number;limit:number;remaining:number};pqc:{used:number;limit:number;remaining:number}};
+export type UsageWindow={plan:string;expires_at:number|null;window:string;audits:{used:number;limit:number;remaining:number};assistant:{used:number;limit:number;remaining:number};pqc:{used:number;limit:number|null;remaining:number|null;history_enabled?:boolean}};
 export type PlanQuote={plan:string;network:string;chain_id:number;currency:string;denom:string;decimals:number;amount_raw:string;amount_fusd:string};
 export type PendingPaymentIntent={id:string;plan:string;network:string;chain_id:number;currency:string;decimals:number;denom:string;recipient:string;amount_raw:string;amount_fusd:string;memo:string;expires_at:number;status:string;tx_hash:string|null};
 export type PaymentIntent={id:string;network:string;chain_id:number;currency:string;decimals:number;denom:string;recipient:string;amount_raw:string;amount_fusd:string;memo:string;expires_at:number;status:string;notice:string};
@@ -44,6 +44,8 @@ export const api={
  runAudit:(id:string)=>request<Audit>(`/api/v1/projects/${encodeURIComponent(id)}/audits`,{method:'POST'}),
  audit:(id:string)=>request<Audit>(`/api/v1/audits/${encodeURIComponent(id)}`),
  pqc:(id:string)=>request<PqcScan>(`/api/v1/projects/${encodeURIComponent(id)}/pqc/scan`,{method:'POST'}),
+ pqcPaste:(source:string)=>request<PqcScan>('/api/v1/pqc/scan',json({source})),
+ pqcFiles:(files:File[])=>{const data=new FormData();files.forEach(file=>data.append('files',file));return request<PqcScan>('/api/v1/pqc/scan/files',{method:'POST',body:data});},
  inspectTx:(hash:string)=>request<TxEvidence>(`/api/v1/qorechain/transactions/${encodeURIComponent(hash)}`),
  subscription:()=>request<{plan:string;expires_at:number|null;active:boolean}>('/api/v1/subscriptions/me'),
  usage:()=>request<UsageWindow>('/api/v1/subscriptions/usage'),

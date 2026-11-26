@@ -85,3 +85,12 @@
 .pqc-risk-count{display:flex;flex-direction:column;gap:5px;padding:12px;border:1px solid #30475d;background:#102334;border-radius:6px}
 .pqc-risk-count strong{font-size:20px;color:#d8f5ff}
 .pqc-risk-count span{font-size:11px;color:#a8bfd1;line-height:1.5}
+
+/* Standalone, historyless PQC source selection */
+.pqc-mode-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
+.pqc-source-input{display:flex;flex-direction:column;gap:10px;margin:12px 0 16px}
+.pqc-source-input select.field{width:100%;appearance:auto}
+.pqc-editor{min-height:220px;resize:vertical}
+.pqc-source-input .upload-box{width:100%}
+.pqc-unlock{margin-top:14px;margin-bottom:10px}
+.pqc-unlock .secondary{align-self:flex-start}

@@ -48,6 +48,12 @@ export default function Home(){
  const [walletMessage,setWalletMessage]=useState('');
  const [jobId,setJobId]=useState('');const [agentDone,setAgentDone]=useState(0);
  const [pqcScan,setPqcScan]=useState<PqcScan|null>(null);
+ const [pqcInputMode,setPqcInputMode]=useState<'project'|'paste'|'upload'>('project');
+ const [pqcProjectId,setPqcProjectId]=useState('');
+ const [pqcSource,setPqcSource]=useState('');
+ const [pqcUploads,setPqcUploads]=useState<File[]>([]);
+ const [pqcWalletLocked,setPqcWalletLocked]=useState(false);
+ const pqcFileRef=useRef<HTMLInputElement>(null);
  const [txHash,setTxHash]=useState('');const [hybridSendStatus,setHybridSendStatus]=useState('');const [txEvidence,setTxEvidence]=useState<TxEvidence|null>(null);
  const [paymentIntent,setPaymentIntent]=useState<PaymentIntent|null>(null);
  const [pendingPayments,setPendingPayments]=useState<PendingPaymentIntent[]>([]);
@@ -236,7 +242,7 @@ export default function Home(){
    try{await api.logout();}catch(e){setError(e instanceof Error?e.message:'Could not sign out');return;}
    setWalletIssue(null);setWalletMessage('');setSignedIn(false);setNativeAddress('');setGasBalance(null);setPendingLogin(null);
    setNeedsFaucet(false);setAccessToken('');setSubscription(null);setUsage(null);setRecentProjects([]);
-   setProject(null);setAudit(null);setPqcScan(null);setPaymentIntent(null);setPaymentHash('');setFunding(null);setFundingMessage('');setFundingError('');
+   setProject(null);setAudit(null);setPqcScan(null);setPqcWalletLocked(false);setPaymentIntent(null);setPaymentHash('');setFunding(null);setFundingMessage('');setFundingError('');
    setAllAudits([]);setTransactions([]);setMoreAudits(false);setMoreTransactions(false);setAuditMessages([]);setSelectedAuditId('');
    setPendingPayments([]);setPendingPaymentError('');setManualPaymentHash('');
  }
@@ -249,9 +255,26 @@ export default function Home(){
    }catch(e){if(!closed){setBusy(false);setJobId('');setError(e instanceof Error?e.message:'Audit status unavailable');}}};
    void poll();const ticker=setInterval(poll,4000);return()=>{closed=true;clearInterval(ticker)};
  },[jobId,signedIn]);
- async function runPqc(){if(!project){setError('Submit a project first.');return;}setBusy(true);setError('');
-   try{const scan=await api.pqc(project.id);setPqcScan(scan);setNotice('Source inventory complete.');}
-   catch(e){setError(e instanceof Error?e.message:'PQC scan failed');}finally{setBusy(false);}}
+ async function runPqc(){
+   setBusy(true);setError('');setNotice('');setPqcScan(null);
+   try{
+     let result:PqcScan;
+     if(pqcInputMode==='project'){
+       const id=pqcProjectId||project?.id;
+       if(!id)throw new Error('Select a saved Solidity project first.');
+       result=await api.pqc(id);
+     }else if(pqcInputMode==='paste'){
+       if(!pqcSource.trim())throw new Error('Paste Solidity source to scan.');
+       result=await api.pqcPaste(pqcSource);
+     }else{
+       if(!pqcUploads.length)throw new Error('Choose .sol files or one ZIP archive first.');
+       result=await api.pqcFiles(pqcUploads);
+     }
+     setPqcScan(result);
+     setNotice('Cryptographic inventory completed. No paid audit credits were used or PQC scan history saved.');
+   }catch(e){setError(e instanceof Error?e.message:'PQC scan failed');}
+   finally{setBusy(false);}
+ }
  async function inspectHybridEvidence(hash:string){
    const evidence=await api.inspectTx(hash);
    setTxEvidence(evidence);
@@ -281,6 +304,7 @@ export default function Home(){
    try{
      const balance=await refreshGas(nativeAddress);
      if(balance.low_gas){setError('Testnet QOR below 10. Claim tokens from the faucet before sending proof.');return;}
+     setPqcWalletLocked(false);
      const proof=await sendHybridProof(nativeAddress);
      broadcastHash=proof.txHash;
      setHybridSendStatus(`Wallet broadcast: ${proof.shield}`);
@@ -291,7 +315,15 @@ export default function Home(){
      if(broadcastHash){
        setNotice('QoreX broadcast the transaction. Its hash is preserved above; the on-chain lookup failed. Use Inspect transaction to retry without sending another transaction.');
        setError('Inspector unavailable: '+detail);
-     }else setError(detail);
+     }else{
+       const issue=classifyQoreXError(e);
+       if(issue?.issue==='locked'){
+         setPqcWalletLocked(true);setError('');
+         setHybridSendStatus('QoreX is locked. Unlock the extension to send a hybrid proof; source scans are unaffected.');
+       }else if(issue?.issue==='wrong-network'){
+         setPqcWalletLocked(false);setError(issue.message);
+       }else setError(detail);
+     }
    }finally{setBusy(false);}
  }
  async function inspectTx(){if(!txHash.trim())return;setBusy(true);setError('');setNotice('');
@@ -466,7 +498,34 @@ export default function Home(){
  <button className="primary" disabled={!signedIn||!selectedAuditId||chatBusy||!auditQuestion.trim()} onClick={askAuditQuestion}><MessageSquareText size={16}/>{chatBusy?'Analyzing…':'Send question'}</button>
  </section></>:<section className="panel"><Empty icon={ShieldAlert} title={loadingHistory?'Loading audit report':!signedIn&&auditIdFromPathname(pathname)?'Sign in to view this audit':'No audit selected'} desc={loadHistoryError||(!signedIn&&auditIdFromPathname(pathname)?'Authenticate with your QoreX wallet to load this private report.':'Open a saved report from Audit History without running another audit.')} action={!signedIn?<button className="primary" onClick={signInNative}>Sign in with QoreX</button>:<button className="primary" onClick={()=>navigate('audit-history')}>Open audit history <ArrowRight size={16}/></button>}/></section>}</>}
  {view==='assistant'&&<><Header kicker="SECURITY / AI ASSISTANT" title="AI security assistant" sub="Discuss submitted Solidity source and audit evidence."/><section className="panel"><div className="panel-head"><h2>Project security analysis</h2><Status tone={project?'cyan':'neutral'}>{project?.name||'Select a project'}</Status></div>{project?<><label className="field-label" htmlFor="assistant-question">Your question</label><textarea id="assistant-question" className="field" rows={4} maxLength={2000} placeholder="Which access-control assumptions should I verify?" value={question} onChange={e=>setQuestion(e.target.value)}/><button className="primary" disabled={busy||!question.trim()} onClick={askSecurityAssistant}><MessageSquareText size={16}/> Ask assistant</button>{assistantAnswer&&<><div className="section-separator"/><pre className="report">{assistantAnswer}</pre><p className="help-text">AI-generated response grounded in supplied files; verify any claims independently.</p></>}</>:<Empty icon={MessageSquareText} title="Submit a contract to begin" desc="The assistant uses source files from your workspace. Open a project first." action={<button className="secondary" onClick={()=>navigate('new-audit')}>Submit source <ArrowRight size={16}/></button>}/>}</section></>}
- {view==='pqc'&&<><Header kicker="QUANTUM RESILIENCE / INVENTORY" title="Post-Quantum Readiness" sub="Inspect source-level cryptographic references and QoreChain hybrid-signature evidence."/><div className="stats small-stats"><div className="stat"><div className="stat-label">CRYPTO COMPONENTS</div><strong>{pqcScan?.components??'—'}</strong><span>{pqcScan?.method||'No scan yet'}</span></div><div className="stat"><div className="stat-label">HYBRID PROOF</div><strong className="stat-word">{txEvidence?.chain_reports_verified?'CHAIN VERIFIED':'—'}</strong><span>{txEvidence?.found?'QoreChain testnet evidence':'No inspected transaction'}</span></div><div className="stat"><div className="stat-label">CBOM</div><strong className="stat-word">{pqcScan?.cbom?'AVAILABLE':'—'}</strong><span>CycloneDX inventory</span></div></div><div className="settings-grid"><section className="panel"><div className="panel-head"><h2>Cryptographic inventory</h2><Status tone="cyan">SOLIDITY SOURCE</Status></div>{project?<><p className="plain-copy">{project.name}</p><button className="primary" disabled={busy} onClick={runPqc}><Fingerprint size={16}/> Analyze source</button></>:<Empty icon={FileCode2} title="No submitted project" desc="Run a source submission to begin cryptographic inventory." action={<button className="secondary" onClick={()=>navigate('new-audit')}>Open new audit</button>}/>} {pqcScan&&<><div className="section-separator"/><p className="help-text">{pqcScan.limitations}</p><p className="help-text">Scanner: <strong>{pqcScan.method}</strong></p>{pqcScan.risk_summary&&<div className="pqc-risk-summary">{Object.entries(pqcScan.risk_summary).map(([kind,count])=><div className="pqc-risk-count" key={kind}><strong>{count}</strong><span>{kind==='quantum-vulnerable'?'Quantum migration review':kind==='post-quantum'?'Post-quantum references':kind==='symmetric'?'Hashes / symmetric':kind}</span></div>)}</div>}<div className="service-list">{pqcScan.evidence.slice(0,30).map((e,i)=><div key={i}><span><Code2 size={14}/>{e.algorithm} — {e.file}{e.line?':'+e.line:''}</span><Status tone={e.classification==='quantum-vulnerable'?'warn':e.classification==='post-quantum'?'good':'neutral'}>{e.classification}</Status></div>)}</div><button className="secondary" onClick={()=>{const a=document.createElement('a');const url=URL.createObjectURL(new Blob([JSON.stringify(pqcScan.cbom,null,2)],{type:'application/json'}));a.href=url;a.download='qoresentinel-cbom.json';a.click();URL.revokeObjectURL(url);}}><Download size={16}/> Export CBOM</button>{pqcScan.report_markdown&&<button className="secondary" onClick={()=>{const a=document.createElement('a');const url=URL.createObjectURL(new Blob([pqcScan.report_markdown!],{type:'text/markdown'}));a.href=url;a.download='qorescan-readiness-report.md';a.click();URL.revokeObjectURL(url);}}><Download size={16}/> Download QoreScan report</button>}</>}</section><section className="panel"><div className="panel-head"><h2>QoreChain hybrid-signature evidence</h2><Status tone="cyan">DIANA TESTNET</Status></div><div className="info-note"><ShieldCheck size={16}/>A hybrid proof sends 1 uqor (0.000001 testnet QOR) from your QoreX native address back to itself. Network fees apply. Your wallet will request approval.</div><button className="secondary" disabled={!nativeAddress||busy} onClick={makeHybridProof}><ShieldCheck size={15}/> Send hybrid testnet proof</button>{hybridSendStatus&&<p className="help-text">{hybridSendStatus}</p>}<div className="section-separator"/><label className="field-label" htmlFor="proof-hash">Native transaction hash</label><input id="proof-hash" className="field" value={txHash} onChange={e=>setTxHash(e.target.value)} placeholder="0x… (64 hex characters)"/><button className="secondary" disabled={busy||!txHash.trim()} onClick={inspectTx}><Search size={15}/> Inspect transaction</button>{txEvidence&&<div className="service-list"><div><span>Found on chain</span><Status tone={txEvidence.found?'good':'warn'}>{txEvidence.found?'Yes':'No'}</Status></div>{txEvidence.found&&<><div><span>Hybrid layer present</span><Status tone={txEvidence.hybrid_layer_present?'good':'warn'}>{txEvidence.hybrid_layer_present?'Yes':'No'}</Status></div><div><span>Chain-reported verification</span><Status tone={txEvidence.chain_reports_verified?'good':'warn'}>{txEvidence.chain_reports_verified?'Verified':'Not verified'}</Status></div><p className="help-text">{txEvidence.verification_method}</p></>}</div>}</section></div></>}
+ {view==='pqc'&&<><Header kicker="QUANTUM RESILIENCE / INVENTORY" title="Post-Quantum Readiness" sub="Inspect source-level cryptographic references and QoreChain hybrid-signature evidence."/><div className="stats small-stats"><div className="stat"><div className="stat-label">CRYPTO COMPONENTS</div><strong>{pqcScan?.components??'—'}</strong><span>{pqcScan?.method||'No scan yet'}</span></div><div className="stat"><div className="stat-label">HYBRID PROOF</div><strong className="stat-word">{txEvidence?.chain_reports_verified?'CHAIN VERIFIED':'—'}</strong><span>{txEvidence?.found?'QoreChain testnet evidence':'No inspected transaction'}</span></div><div className="stat"><div className="stat-label">CBOM</div><strong className="stat-word">{pqcScan?.cbom?'AVAILABLE':'—'}</strong><span>CycloneDX inventory</span></div></div><div className="settings-grid"><section className="panel"><div className="panel-head"><h2>Cryptographic inventory</h2><Status tone="cyan">SOLIDITY SOURCE</Status></div><p className="plain-copy">Scan Solidity without starting a paid AI audit. PQC scans are not saved to history; download the CBOM or report if you want to retain a result.</p>
+<div className="tab-row pqc-mode-tabs" role="group" aria-label="PQC source type">
+  <button className={pqcInputMode==='project'?'selected':''} onClick={()=>{setPqcInputMode('project');setPqcScan(null);}}><FolderOpen size={15}/> Saved project</button>
+  <button className={pqcInputMode==='paste'?'selected':''} onClick={()=>{setPqcInputMode('paste');setPqcScan(null);}}><Code2 size={15}/> Paste Solidity</button>
+  <button className={pqcInputMode==='upload'?'selected':''} onClick={()=>{setPqcInputMode('upload');setPqcScan(null);}}><Upload size={15}/> Upload files / ZIP</button>
+</div>
+{pqcInputMode==='project'&&<div className="pqc-source-input">
+ <label className="field-label" htmlFor="pqc-project">Choose your saved project</label>
+ <select id="pqc-project" className="field" value={pqcProjectId||project?.id||''} onChange={e=>{setPqcProjectId(e.target.value);setPqcScan(null);}}>
+ <option value="">Select a project</option>
+ {recentProjects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+ {project&&!recentProjects.some(p=>p.id===project.id)&&<option value={project.id}>{project.name}</option>}
+ </select>
+ {!recentProjects.length&&!project&&<p className="help-text">No saved projects yet. Paste Solidity or upload source files instead.</p>}
+ </div>}
+{pqcInputMode==='paste'&&<div className="pqc-source-input">
+ <label className="field-label" htmlFor="pqc-pasted-source">Solidity source</label>
+ <textarea id="pqc-pasted-source" className="code-editor pqc-editor" spellCheck={false} placeholder={"// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\ncontract Example {}"} value={pqcSource} onChange={e=>{setPqcSource(e.target.value);setPqcScan(null);}}/>
+ <p className="help-text">Source is scanned for cryptographic references and discarded after the request. No project is created.</p>
+ </div>}
+{pqcInputMode==='upload'&&<div className="pqc-source-input">
+ <input ref={pqcFileRef} type="file" accept=".sol,.zip" multiple hidden onChange={e=>{const next=Array.from(e.target.files||[]);setPqcUploads(next);setPqcScan(null);}}/>
+ <button className="upload-box" onClick={()=>pqcFileRef.current?.click()}><CloudUpload size={24}/><strong>Choose Solidity files or a ZIP</strong><span>ZIP archives must be uploaded alone.</span></button>
+ {pqcUploads.length>0&&<p className="help-text">{pqcUploads.map(f=>f.name).join(', ')}</p>}
+ <p className="help-text">Files are scanned in memory and discarded after scanning. No saved project or PQC history.</p>
+ </div>}
+<button className="primary" disabled={busy||!signedIn||(pqcInputMode==='project'&&!(pqcProjectId||project?.id))||(pqcInputMode==='paste'&&!pqcSource.trim())||(pqcInputMode==='upload'&&!pqcUploads.length)} onClick={runPqc}><Fingerprint size={16}/>{busy?'Scanning source…':'Analyze source — free'}</button>
+{!signedIn&&<p className="help-text">Sign in with QoreX to use the scanner; no wallet transaction is required for each scan and no audit credits are consumed.</p>} {pqcScan&&<><div className="section-separator"/><p className="help-text">{pqcScan.limitations}</p><p className="help-text">Scanner: <strong>{pqcScan.method}</strong></p>{pqcScan.risk_summary&&<div className="pqc-risk-summary">{Object.entries(pqcScan.risk_summary).map(([kind,count])=><div className="pqc-risk-count" key={kind}><strong>{count}</strong><span>{kind==='quantum-vulnerable'?'Quantum migration review':kind==='post-quantum'?'Post-quantum references':kind==='symmetric'?'Hashes / symmetric':kind}</span></div>)}</div>}<div className="service-list">{pqcScan.evidence.slice(0,30).map((e,i)=><div key={i}><span><Code2 size={14}/>{e.algorithm} — {e.file}{e.line?':'+e.line:''}</span><Status tone={e.classification==='quantum-vulnerable'?'warn':e.classification==='post-quantum'?'good':'neutral'}>{e.classification}</Status></div>)}</div><button className="secondary" onClick={()=>{const a=document.createElement('a');const url=URL.createObjectURL(new Blob([JSON.stringify(pqcScan.cbom,null,2)],{type:'application/json'}));a.href=url;a.download='qoresentinel-cbom.json';a.click();URL.revokeObjectURL(url);}}><Download size={16}/> Export CBOM</button>{pqcScan.report_markdown&&<button className="secondary" onClick={()=>{const a=document.createElement('a');const url=URL.createObjectURL(new Blob([pqcScan.report_markdown!],{type:'text/markdown'}));a.href=url;a.download='qorescan-readiness-report.md';a.click();URL.revokeObjectURL(url);}}><Download size={16}/> Download QoreScan report</button>}</>}</section><section className="panel"><div className="panel-head"><h2>QoreChain hybrid-signature evidence</h2><Status tone="cyan">DIANA TESTNET</Status></div><div className="info-note"><ShieldCheck size={16}/>A hybrid proof sends 1 uqor (0.000001 testnet QOR) from your QoreX native address back to itself. Network fees apply. Your wallet will request approval.</div><button className="secondary" disabled={!nativeAddress||busy} onClick={makeHybridProof}><ShieldCheck size={15}/> Send hybrid testnet proof</button>{pqcWalletLocked&&<div className="wallet-onboarding pqc-unlock" role="alert"><div className="wallet-onboarding-heading"><LockKeyhole size={18}/><div><strong>QoreX is locked</strong><p>Open the QoreX browser extension and unlock your wallet. This is only required to broadcast the hybrid testnet proof, not for cryptographic source scans.</p></div></div><button className="secondary" disabled={busy} onClick={makeHybridProof}><RefreshCcw size={15}/> Retry after unlocking</button></div>}{hybridSendStatus&&<p className="help-text">{hybridSendStatus}</p>}<div className="section-separator"/><label className="field-label" htmlFor="proof-hash">Native transaction hash</label><input id="proof-hash" className="field" value={txHash} onChange={e=>setTxHash(e.target.value)} placeholder="0x… (64 hex characters)"/><button className="secondary" disabled={busy||!txHash.trim()} onClick={inspectTx}><Search size={15}/> Inspect transaction</button>{txEvidence&&<div className="service-list"><div><span>Found on chain</span><Status tone={txEvidence.found?'good':'warn'}>{txEvidence.found?'Yes':'No'}</Status></div>{txEvidence.found&&<><div><span>Hybrid layer present</span><Status tone={txEvidence.hybrid_layer_present?'good':'warn'}>{txEvidence.hybrid_layer_present?'Yes':'No'}</Status></div><div><span>Chain-reported verification</span><Status tone={txEvidence.chain_reports_verified?'good':'warn'}>{txEvidence.chain_reports_verified?'Verified':'Not verified'}</Status></div><p className="help-text">{txEvidence.verification_method}</p></>}</div>}</section></div></>}
  {view==='billing'&&<><Header kicker="MANAGEMENT / BILLING & USAGE" title="Subscriptions & usage" sub="Purchase audit plans using QoreX native fUSD bank transfers. All payments require on-chain confirmation."/><div className="stats small-stats"><div className="stat"><div className="stat-label">CURRENT PLAN</div><strong className="stat-word">{subscription?.plan?.toUpperCase()||'FREE'}</strong><span>{subscription?.expires_at?`Expires ${new Date(subscription.expires_at*1000).toLocaleDateString()}`:'No paid entitlement'}</span><span>{usage?`${usage.audits.remaining} of ${usage.audits.limit} audits remaining (24h)`:'Checking usage…'}</span></div><div className="stat"><div className="stat-label">NETWORK</div><strong className="stat-word">DIANA</strong><span>QoreChain 9800 · Test tokens only</span></div><div className="stat"><div className="stat-label">CHECKOUT</div><strong className="stat-word">{paymentResult?'IN PROGRESS':'—'}</strong><span>Backend verifies native bank transfers</span></div></div><section className="panel"><div className="panel-head"><h2>Testnet fUSD checkout</h2><Status tone="cyan">NO REAL MONETARY VALUE</Status></div><p className="plain-copy">Approve a native QoreX bank transfer. Access activates only after the backend verifies the sender, recipient, exact fUSD amount, memo, hybrid signature and confirmations.</p>
  {signedIn&&<div className="checkout-funding" aria-live="polite">
    <div className="checkout-funding-head"><strong>Wallet balance check</strong><button className="secondary" disabled={busy||fundingLoading} onClick={()=>void refreshFunding().catch(()=>{})}><RefreshCcw size={14}/>{fundingLoading?'Checking…':'Refresh balances'}</button></div>
