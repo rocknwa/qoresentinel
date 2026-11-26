@@ -3,7 +3,7 @@ import os
 import re
 import secrets
 import time
-from fastapi import Depends,Header,HTTPException
+from fastapi import Depends,Header,Cookie,HTTPException
 from pydantic import BaseModel
 from . import storage
 
@@ -93,11 +93,12 @@ def verify(payload:VerifyRequest):
     token=jwt.encode({'sub':signer.lower(),'iat':int(time.time()),'exp':int(time.time())+3600,'iss':'qoresentinel'},auth_secret(),algorithm='HS256')
     return {'access_token':token,'token_type':'bearer','expires_in':3600,'wallet':signer.lower()}
 
-def require_wallet(authorization:str|None=Header(None)):
+def require_wallet(authorization:str|None=Header(None),qs_session:str|None=Cookie(None)):
     import jwt
     secret=auth_secret()
-    if not authorization or not authorization.startswith('Bearer '):raise HTTPException(401,'Sign in with an EVM wallet')
-    try:data=jwt.decode(authorization[7:],secret,algorithms=['HS256'],issuer='qoresentinel')
+    token=authorization[7:] if authorization and authorization.startswith('Bearer ') else qs_session
+    if not token:raise HTTPException(401,'QoreX wallet authentication required')
+    try:data=jwt.decode(token,secret,algorithms=['HS256'],issuer='qoresentinel')
     except jwt.PyJWTError as exc:raise HTTPException(401,'Invalid or expired wallet session') from exc
     wallet=data.get('sub','')
     if not (ETH_ADDR.fullmatch(wallet) or is_native(wallet)):raise HTTPException(401,'Invalid wallet session')

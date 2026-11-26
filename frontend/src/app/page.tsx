@@ -1,7 +1,7 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
 import {usePathname} from 'next/navigation';
-import {VIEW_PATHS,viewFromPathname,type View} from '@/lib/routes';
+import {VIEW_PATHS,viewFromPathname,auditIdFromPathname,auditReportPath,type View} from '@/lib/routes';
 import {Activity,ArrowRight,Bell,BookOpen,CheckCircle2,ChevronDown,CircleAlert,Clock3,CloudUpload,Code2,CreditCard,Download,FileCode2,FileSearch,FileText,Fingerprint,FolderOpen,HelpCircle,Hexagon,LayoutDashboard,LockKeyhole,Menu,MessageSquareText,Plus,Radio,RefreshCcw,Search,Settings2,Shield,ShieldAlert,ShieldCheck,Sparkles,Upload,Wallet, X} from 'lucide-react';
 import {api,setAccessToken,type Audit,type AuditSummary,type AuditMessage,type ChainTx,type Project,type PqcScan,type TxEvidence,type PaymentIntent,type PendingPaymentIntent,type PlanQuote,type UsageWindow} from '@/lib/api';
 import {connectQoreX,loginProof,nativeSend,sendHybridProof,FAUCET_URL,QOREX_CHROME_URL,QOREX_FIREFOX_URL,QOREX_NETWORK_GUIDE,hasQoreXNative,classifyQoreXError,type QoreXConnectIssue} from '@/lib/wallet';
@@ -122,7 +122,10 @@ export default function Home(){
      setProject(existing||{id:loaded.project_id,name:matching?.project_name||'Saved audit'});
      setAudit(loaded);setSelectedAuditId(jobId);setAuditQuestion('');setAuditMessages([]);
      const messages=await api.auditMessages(jobId);
-     setAuditMessages(messages.messages);navigate('audit-results');
+     setAuditMessages(messages.messages);
+     if(loaded.status==='queued'||loaded.status==='running'){
+       setJobId(jobId);setAgentDone(loaded.completed_agents);navigateAudit(jobId,'audit-progress');
+     }else navigateAudit(jobId);
    }catch(e){setLoadHistoryError(e instanceof Error?e.message:'Could not open saved audit');}
    finally{setLoadingHistory(false);}
  }
@@ -148,9 +151,7 @@ export default function Home(){
    catch(e){setLoadHistoryError(e instanceof Error?e.message:'Could not load more transactions');}
    finally{setLoadingHistory(false);}
  }
- function afterLogin(token:string){
-   setWalletIssue(null);setWalletMessage('');setAccessToken(token);setSignedIn(true);setPendingLogin(null);setNeedsFaucet(false);
-   setNotice('QoreX native wallet authenticated on Diana testnet.');
+ function loadWalletWorkspace(){
    api.subscription().then(setSubscription).catch(()=>{});
    api.usage().then(setUsage).catch(()=>{});
    api.pendingIntents().then(x=>setPendingPayments(x.intents)).catch(()=>{});
@@ -158,6 +159,44 @@ export default function Home(){
    api.audits().then(x=>{setAllAudits(x.audits);setMoreAudits(x.has_more)}).catch(()=>{});
    api.transactions().then(x=>{setTransactions(x.transactions);setMoreTransactions(x.has_more)}).catch(()=>{});
  }
+ function afterLogin(token:string){
+   setWalletIssue(null);setWalletMessage('');setAccessToken(token);setSignedIn(true);setPendingLogin(null);setNeedsFaucet(false);
+   setNotice('QoreX native wallet authenticated on Diana testnet.');
+   loadWalletWorkspace();
+ }
+ useEffect(()=>{
+   let active=true;
+   api.session().then(session=>{
+     if(!active)return;
+     setNativeAddress(session.wallet);setSignedIn(true);setWalletIssue(null);setWalletMessage('');
+     loadWalletWorkspace();
+   }).catch(()=>{});
+   return ()=>{active=false};
+ },[]);
+ useEffect(()=>{
+   const id=auditIdFromPathname(pathname);
+   if(!id||!signedIn||audit?.id===id)return;
+   let active=true;
+   const load=async()=>{
+     setLoadingHistory(true);
+     try{
+       const result=await api.audit(id);
+       const [messages,storedProject]=await Promise.all([
+         api.auditMessages(id),api.getProject(result.project_id).catch(()=>null)
+       ]);
+       if(!active)return;
+       setAudit(result);setSelectedAuditId(id);setAuditMessages(messages.messages);
+       setProject(storedProject||{id:result.project_id,name:allAudits.find(x=>x.id===id)?.project_name||'Saved audit'});
+       if(result.status==='queued'||result.status==='running'){
+         setJobId(id);setAgentDone(result.completed_agents);setView('audit-progress');
+       }else setView('audit-results');
+       setLoadHistoryError('');
+     }catch(e){if(active)setLoadHistoryError(e instanceof Error?e.message:'Audit not found or access denied');}
+     finally{if(active)setLoadingHistory(false);}
+   };
+   void load();
+   return()=>{active=false};
+ },[pathname,signedIn,audit?.id]);
  async function refreshGas(address:string){
    const balance=await api.nativeBalance(address);
    setGasBalance(balance.amount_raw);
@@ -193,16 +232,19 @@ export default function Home(){
    }catch(e){setError(e instanceof Error?e.message:'Native login verification pending');}
    finally{setBusy(false);}
  }
- function logout(){setWalletIssue(null);setWalletMessage('');setSignedIn(false);setNativeAddress('');setGasBalance(null);setPendingLogin(null);
+ async function logout(){
+   try{await api.logout();}catch(e){setError(e instanceof Error?e.message:'Could not sign out');return;}
+   setWalletIssue(null);setWalletMessage('');setSignedIn(false);setNativeAddress('');setGasBalance(null);setPendingLogin(null);
    setNeedsFaucet(false);setAccessToken('');setSubscription(null);setUsage(null);setRecentProjects([]);
    setProject(null);setAudit(null);setPqcScan(null);setPaymentIntent(null);setPaymentHash('');setFunding(null);setFundingMessage('');setFundingError('');
    setAllAudits([]);setTransactions([]);setMoreAudits(false);setMoreTransactions(false);setAuditMessages([]);setSelectedAuditId('');
-   setPendingPayments([]);setPendingPaymentError('');setManualPaymentHash('');}
+   setPendingPayments([]);setPendingPaymentError('');setManualPaymentHash('');
+ }
  useEffect(()=>{if(!jobId||!signedIn)return;
    let closed=false;
    const poll=async()=>{try{const status=await api.audit(jobId);if(closed)return;
      setAgentDone(status.completed_agents);
-     if(status.status==='completed'){setAudit(status);setSelectedAuditId(status.id);setAuditMessages([]);setBusy(false);setJobId('');navigate('audit-results');api.audits().then(x=>{setAllAudits(x.audits);setMoreAudits(x.has_more)}).catch(()=>{});}
+     if(status.status==='completed'){setAudit(status);setSelectedAuditId(status.id);setAuditMessages([]);setBusy(false);setJobId('');navigateAudit(status.id);api.audits().then(x=>{setAllAudits(x.audits);setMoreAudits(x.has_more)}).catch(()=>{});}
      if(status.status==='failed'){setBusy(false);setJobId('');setError(status.error||'Audit failed.');}
    }catch(e){if(!closed){setBusy(false);setJobId('');setError(e instanceof Error?e.message:'Audit status unavailable');}}};
    void poll();const ticker=setInterval(poll,4000);return()=>{closed=true;clearInterval(ticker)};
@@ -339,6 +381,12 @@ export default function Home(){
    try{setAssistantAnswer((await api.ask(project.id,question)).answer);}catch(e){setError(e instanceof Error?e.message:'Assistant unavailable');}finally{setBusy(false);}}
 
  useEffect(()=>{api.health().then(()=>setBackend('online')).catch(()=>setBackend('offline'))},[]);
+ function navigateAudit(jobId:string,stage:'audit-results'|'audit-progress'='audit-results'){
+   if(window.location.pathname!==auditReportPath(jobId)){
+     window.history.pushState({audit:jobId},'',auditReportPath(jobId));
+   }
+   setView(stage);setMenuOpen(false);setError('');
+ }
  function navigate(next:View){
    const destination=VIEW_PATHS[next];
    if(window.location.pathname!==destination){
@@ -352,7 +400,7 @@ export default function Home(){
  setBusy(true);setAudit(null);setSelectedAuditId('');setAuditMessages([]);setAgentDone(0);navigate('audit-progress');try{
   const created=await api.createProject(projectName.trim()||'Untitled project');setProject(created);setRecentProjects(prev=>[created,...prev]);
   if(mode==='paste')await api.pasteSource(created.id,source);else{if(!files.length)throw new Error('Select at least one .sol file or a ZIP project.');await api.upload(created.id,files);}
-  const job=await api.runAudit(created.id);setJobId(job.id);
+  const job=await api.runAudit(created.id);setJobId(job.id);navigateAudit(job.id,'audit-progress');
   setNotice('Your source was accepted. The twelve-agent security audit is queued.');
  }catch(e){setBusy(false);setError(e instanceof Error?e.message:'Unexpected audit error');}}
  function saveReport(){if(!audit?.report_markdown)return;const url=URL.createObjectURL(new Blob([audit.report_markdown],{type:'text/markdown'}));const a=document.createElement('a');a.href=url;a.download=`qoresentinel-audit-${project?.id||'report'}.md`;a.click();URL.revokeObjectURL(url)}
@@ -391,7 +439,7 @@ export default function Home(){
  <div className="history-list">{allAudits.map(item=><div className="history-item" key={item.id}>
  <div><strong>{item.project_name}</strong><p>{new Date(item.created_at).toLocaleString()} · Job {item.id.slice(0,8)}…</p></div>
  <Status tone={item.status==='completed'?'good':item.status==='failed'?'warn':'cyan'}>{item.status}</Status>
- <button className="secondary" disabled={loadingHistory} onClick={()=>openAudit(item.id)}>{item.status==='completed'?'Open report & discussion':'View audit'} <ArrowRight size={14}/></button>
+ <a className="secondary" href={auditReportPath(item.id)} onClick={event=>{if(event.button!==0||event.ctrlKey||event.metaKey||event.altKey||event.shiftKey)return;event.preventDefault();void openAudit(item.id);}}>{item.status==='completed'?'Open report & discussion':'View audit'} <ArrowRight size={14}/></a>
  </div>)}</div>}
  {moreAudits&&<button className="secondary history-load-more" disabled={loadingHistory} onClick={loadMoreAudits}>Load more audits</button>}
  </section></>}
@@ -404,7 +452,7 @@ export default function Home(){
  </section></>}
  {view==='new-audit'&&<><Header kicker="SECURITY / NEW AUDIT" title="Submit smart contract for audit" sub="Inspect Solidity source with QoreSentinel's specialist auditing workflow."/><div className="audit-grid"><section className="panel"><div className="panel-head"><div><span className="eyebrow">01 / PROJECT DETAILS</span><h2>Submission Workspace</h2></div><Status tone="cyan">SOLIDITY</Status></div><label className="field-label" htmlFor="project-name">Project name</label><input id="project-name" className="field" value={projectName} onChange={e=>setProjectName(e.target.value)} maxLength={120} placeholder="e.g. My DeFi Protocol"/><div className="section-separator"/><div className="tab-row"><button className={mode==='paste'?'selected':''} onClick={()=>setMode('paste')}><Code2 size={16}/> Paste source</button><button className={mode==='upload'?'selected':''} onClick={()=>setMode('upload')}><Upload size={16}/> Upload files / ZIP</button></div>{mode==='paste'?<><div className="editor-toolbar"><span><FileCode2 size={14}/> Contract.sol</span><Status>Solidity</Status></div><textarea spellCheck={false} className="code-editor" aria-label="Solidity source code" value={source} onChange={e=>setSource(e.target.value)}/><p className="help-text">Source code is sent to your configured backend for analysis. Do not submit secrets or private keys.</p></>:<><input ref={fileRef} type="file" accept=".sol,.zip" multiple hidden onChange={e=>setFiles(Array.from(e.target.files||[]))}/><button className="upload-box" onClick={()=>fileRef.current?.click()}><CloudUpload size={32}/><strong>Choose Solidity files or ZIP project</strong><span>Supports .sol files or one .zip archive (submitted separately)</span></button><div className="file-list">{files.length?files.map((f,i)=><div key={i}><FileText size={15}/><span>{f.name}</span><button aria-label={`Remove ${f.name}`} onClick={()=>setFiles(files.filter((_,j)=>i!==j))}><X size={15}/></button></div>):<span>No files selected</span>}</div></> }</section><aside className="panel right-panel"><div className="panel-head"><div><span className="eyebrow">02 / AUDIT CONFIGURATION</span><h2>Analysis Settings</h2></div></div><div className="settings-option"><ShieldCheck size={20}/><div><strong>12 specialist agents</strong><p>Parallel vulnerability investigation with final judge consolidation.</p></div><Status tone="cyan">ENGINE</Status></div><div className="settings-option"><LockKeyhole size={20}/><div><strong>Private source handling</strong><p>Runs through your backend; credentials must stay server-side.</p></div></div><div className="settings-option"><FileSearch size={20}/><div><strong>Evidence-first reporting</strong><p>Agent responses are consolidated into a report with source attribution where supported.</p></div></div><button disabled={busy||!signedIn||!projectName.trim()||(mode==='paste'?!source.trim():!files.length)} className="primary full" onClick={submitAudit}>{busy?'Preparing audit...':signedIn?'Initiate Security Audit':'Sign in to start audit'} <ArrowRight size={16}/></button></aside></div></>}
  {view==='audit-progress'&&<><Header kicker="SECURITY / AUDIT IN PROGRESS" title="Multi-agent audit pipeline" sub="Follow your queued audit through the specialist pipeline and final report."/><section className="panel"><div className="panel-head"><div><span className="eyebrow">EXECUTION STATUS</span><h2>{busy?'Analyzing source files…':audit?'Audit completed':'No active audit'}</h2></div><Status tone={busy?'cyan':'neutral'}>{busy?'RUNNING':audit?'COMPLETE':'IDLE'}</Status></div>{error&&<div role="alert" className="alert"><CircleAlert size={17}/>{error}</div>}{notice&&<div className="info-note"><Activity size={17}/>{notice}</div>}<div className="agent-grid">{agentNames.map((name,i)=><div key={name} className="agent-tile"><span className="agent-index">{String(i+1).padStart(2,'0')}</span><Shield size={16}/><div><strong>{name}</strong><small>{busy?(i<agentDone?'Completed':i===agentDone?'Analyzing':'Queued'):'Not running'}</small></div><span className={`tiny-dot ${busy?'pulse':''}`}/></div>)}</div><div className="judge-row"><Sparkles size={18}/><div><strong>Final judge & report synthesis</strong><p>Deduplicates agent findings when the configured engine finishes</p></div><Status>{busy?`${agentDone}/12 specialists done`:'Not running'}</Status></div>{!busy&&<button className="secondary" onClick={()=>navigate('new-audit')}><Plus size={16}/> Start new audit</button>}</section></>}
- {view==='audit-results'&&<><Header kicker="SECURITY / AUDIT RESULTS" title="Audit findings & evidence" sub="Review the report returned by the real backend audit engine." action={audit?.report_markdown?<button className="primary" onClick={saveReport}><Download size={16}/> Download Markdown</button>:undefined}/>{audit?<><div className="stats small-stats"><div className="stat"><div className="stat-label">AUDIT STATUS</div><strong className="stat-word">{audit.status}</strong><span>Backend-reported</span></div><div className="stat"><div className="stat-label">AI-REPORTED FINDINGS</div><strong>{audit.findings_status==='structured_parsing_not_implemented'?'—':audit.findings.length}</strong><span>Extracted from report, not verified</span></div><div className="stat"><div className="stat-label">PROJECT</div><strong className="stat-word">{project?.name||'Unknown'}</strong><span>{project?.id||'No project ID'}</span></div></div>{audit.findings.length>0&&<section className="panel"><div className="panel-head"><div><span className="eyebrow">AI-REPORTED FINDINGS</span><h2>Finding summaries</h2></div><Status tone="warn">Unverified</Status></div>
+ {view==='audit-results'&&<><Header kicker="SECURITY / AUDIT RESULTS" title="Audit findings & evidence" sub="Review the report returned by the real backend audit engine." action={audit?.report_markdown?<div className="audit-link-actions"><button className="secondary" onClick={()=>navigator.clipboard.writeText(window.location.origin+auditReportPath(audit.id))}>Copy audit link</button><button className="primary" onClick={saveReport}><Download size={16}/> Download Markdown</button></div>:undefined}/>{audit?<><div className="stats small-stats"><div className="stat"><div className="stat-label">AUDIT STATUS</div><strong className="stat-word">{audit.status}</strong><span>Backend-reported</span></div><div className="stat"><div className="stat-label">AI-REPORTED FINDINGS</div><strong>{audit.findings_status==='structured_parsing_not_implemented'?'—':audit.findings.length}</strong><span>Extracted from report, not verified</span></div><div className="stat"><div className="stat-label">PROJECT</div><strong className="stat-word">{project?.name||'Unknown'}</strong><span>{project?.id||'No project ID'}</span></div></div>{audit.findings.length>0&&<section className="panel"><div className="panel-head"><div><span className="eyebrow">AI-REPORTED FINDINGS</span><h2>Finding summaries</h2></div><Status tone="warn">Unverified</Status></div>
  <p className="help-text">Extracted from the saved report. Confirm each claim against the source and compile/test results before acting on it.</p>
  <div className="history-list">{audit.findings.map((finding,index)=><div className="finding-item" key={index}>
  <div className="finding-meta"><Status tone={finding.severity.toLowerCase()==='high'||finding.severity.toLowerCase()==='critical'?'warn':'neutral'}>{finding.severity}</Status><strong>{finding.title}</strong></div>
@@ -416,7 +464,7 @@ export default function Home(){
  <label className="field-label" htmlFor="audit-question">Ask about this audit</label>
  <textarea id="audit-question" className="field" rows={3} maxLength={2000} value={auditQuestion} onChange={e=>setAuditQuestion(e.target.value)} placeholder="Which findings should I prioritize, and what evidence supports them?"/>
  <button className="primary" disabled={!signedIn||!selectedAuditId||chatBusy||!auditQuestion.trim()} onClick={askAuditQuestion}><MessageSquareText size={16}/>{chatBusy?'Analyzing…':'Send question'}</button>
- </section></>:<section className="panel"><Empty icon={ShieldAlert} title="No audit selected" desc="Open a saved report from Audit History without running another audit." action={<button className="primary" onClick={()=>navigate('audit-history')}>Open audit history <ArrowRight size={16}/></button>}/></section>}</>}
+ </section></>:<section className="panel"><Empty icon={ShieldAlert} title={loadingHistory?'Loading audit report':!signedIn&&auditIdFromPathname(pathname)?'Sign in to view this audit':'No audit selected'} desc={loadHistoryError||(!signedIn&&auditIdFromPathname(pathname)?'Authenticate with your QoreX wallet to load this private report.':'Open a saved report from Audit History without running another audit.')} action={!signedIn?<button className="primary" onClick={signInNative}>Sign in with QoreX</button>:<button className="primary" onClick={()=>navigate('audit-history')}>Open audit history <ArrowRight size={16}/></button>}/></section>}</>}
  {view==='assistant'&&<><Header kicker="SECURITY / AI ASSISTANT" title="AI security assistant" sub="Discuss submitted Solidity source and audit evidence."/><section className="panel"><div className="panel-head"><h2>Project security analysis</h2><Status tone={project?'cyan':'neutral'}>{project?.name||'Select a project'}</Status></div>{project?<><label className="field-label" htmlFor="assistant-question">Your question</label><textarea id="assistant-question" className="field" rows={4} maxLength={2000} placeholder="Which access-control assumptions should I verify?" value={question} onChange={e=>setQuestion(e.target.value)}/><button className="primary" disabled={busy||!question.trim()} onClick={askSecurityAssistant}><MessageSquareText size={16}/> Ask assistant</button>{assistantAnswer&&<><div className="section-separator"/><pre className="report">{assistantAnswer}</pre><p className="help-text">AI-generated response grounded in supplied files; verify any claims independently.</p></>}</>:<Empty icon={MessageSquareText} title="Submit a contract to begin" desc="The assistant uses source files from your workspace. Open a project first." action={<button className="secondary" onClick={()=>navigate('new-audit')}>Submit source <ArrowRight size={16}/></button>}/>}</section></>}
  {view==='pqc'&&<><Header kicker="QUANTUM RESILIENCE / INVENTORY" title="Post-Quantum Readiness" sub="Inspect source-level cryptographic references and QoreChain hybrid-signature evidence."/><div className="stats small-stats"><div className="stat"><div className="stat-label">CRYPTO COMPONENTS</div><strong>{pqcScan?.components??'—'}</strong><span>{pqcScan?.method||'No scan yet'}</span></div><div className="stat"><div className="stat-label">HYBRID PROOF</div><strong className="stat-word">{txEvidence?.chain_reports_verified?'CHAIN VERIFIED':'—'}</strong><span>{txEvidence?.found?'QoreChain testnet evidence':'No inspected transaction'}</span></div><div className="stat"><div className="stat-label">CBOM</div><strong className="stat-word">{pqcScan?.cbom?'AVAILABLE':'—'}</strong><span>CycloneDX inventory</span></div></div><div className="settings-grid"><section className="panel"><div className="panel-head"><h2>Cryptographic inventory</h2><Status tone="cyan">SOLIDITY SOURCE</Status></div>{project?<><p className="plain-copy">{project.name}</p><button className="primary" disabled={busy} onClick={runPqc}><Fingerprint size={16}/> Analyze source</button></>:<Empty icon={FileCode2} title="No submitted project" desc="Run a source submission to begin cryptographic inventory." action={<button className="secondary" onClick={()=>navigate('new-audit')}>Open new audit</button>}/>} {pqcScan&&<><div className="section-separator"/><p className="help-text">{pqcScan.limitations}</p><p className="help-text">Scanner: <strong>{pqcScan.method}</strong></p>{pqcScan.risk_summary&&<div className="pqc-risk-summary">{Object.entries(pqcScan.risk_summary).map(([kind,count])=><div className="pqc-risk-count" key={kind}><strong>{count}</strong><span>{kind==='quantum-vulnerable'?'Quantum migration review':kind==='post-quantum'?'Post-quantum references':kind==='symmetric'?'Hashes / symmetric':kind}</span></div>)}</div>}<div className="service-list">{pqcScan.evidence.slice(0,30).map((e,i)=><div key={i}><span><Code2 size={14}/>{e.algorithm} — {e.file}{e.line?':'+e.line:''}</span><Status tone={e.classification==='quantum-vulnerable'?'warn':e.classification==='post-quantum'?'good':'neutral'}>{e.classification}</Status></div>)}</div><button className="secondary" onClick={()=>{const a=document.createElement('a');const url=URL.createObjectURL(new Blob([JSON.stringify(pqcScan.cbom,null,2)],{type:'application/json'}));a.href=url;a.download='qoresentinel-cbom.json';a.click();URL.revokeObjectURL(url);}}><Download size={16}/> Export CBOM</button>{pqcScan.report_markdown&&<button className="secondary" onClick={()=>{const a=document.createElement('a');const url=URL.createObjectURL(new Blob([pqcScan.report_markdown!],{type:'text/markdown'}));a.href=url;a.download='qorescan-readiness-report.md';a.click();URL.revokeObjectURL(url);}}><Download size={16}/> Download QoreScan report</button>}</>}</section><section className="panel"><div className="panel-head"><h2>QoreChain hybrid-signature evidence</h2><Status tone="cyan">DIANA TESTNET</Status></div><div className="info-note"><ShieldCheck size={16}/>A hybrid proof sends 1 uqor (0.000001 testnet QOR) from your QoreX native address back to itself. Network fees apply. Your wallet will request approval.</div><button className="secondary" disabled={!nativeAddress||busy} onClick={makeHybridProof}><ShieldCheck size={15}/> Send hybrid testnet proof</button>{hybridSendStatus&&<p className="help-text">{hybridSendStatus}</p>}<div className="section-separator"/><label className="field-label" htmlFor="proof-hash">Native transaction hash</label><input id="proof-hash" className="field" value={txHash} onChange={e=>setTxHash(e.target.value)} placeholder="0x… (64 hex characters)"/><button className="secondary" disabled={busy||!txHash.trim()} onClick={inspectTx}><Search size={15}/> Inspect transaction</button>{txEvidence&&<div className="service-list"><div><span>Found on chain</span><Status tone={txEvidence.found?'good':'warn'}>{txEvidence.found?'Yes':'No'}</Status></div>{txEvidence.found&&<><div><span>Hybrid layer present</span><Status tone={txEvidence.hybrid_layer_present?'good':'warn'}>{txEvidence.hybrid_layer_present?'Yes':'No'}</Status></div><div><span>Chain-reported verification</span><Status tone={txEvidence.chain_reports_verified?'good':'warn'}>{txEvidence.chain_reports_verified?'Verified':'Not verified'}</Status></div><p className="help-text">{txEvidence.verification_method}</p></>}</div>}</section></div></>}
  {view==='billing'&&<><Header kicker="MANAGEMENT / BILLING & USAGE" title="Subscriptions & usage" sub="Purchase audit plans using QoreX native fUSD bank transfers. All payments require on-chain confirmation."/><div className="stats small-stats"><div className="stat"><div className="stat-label">CURRENT PLAN</div><strong className="stat-word">{subscription?.plan?.toUpperCase()||'FREE'}</strong><span>{subscription?.expires_at?`Expires ${new Date(subscription.expires_at*1000).toLocaleDateString()}`:'No paid entitlement'}</span><span>{usage?`${usage.audits.remaining} of ${usage.audits.limit} audits remaining (24h)`:'Checking usage…'}</span></div><div className="stat"><div className="stat-label">NETWORK</div><strong className="stat-word">DIANA</strong><span>QoreChain 9800 · Test tokens only</span></div><div className="stat"><div className="stat-label">CHECKOUT</div><strong className="stat-word">{paymentResult?'IN PROGRESS':'—'}</strong><span>Backend verifies native bank transfers</span></div></div><section className="panel"><div className="panel-head"><h2>Testnet fUSD checkout</h2><Status tone="cyan">NO REAL MONETARY VALUE</Status></div><p className="plain-copy">Approve a native QoreX bank transfer. Access activates only after the backend verifies the sender, recipient, exact fUSD amount, memo, hybrid signature and confirmations.</p>
