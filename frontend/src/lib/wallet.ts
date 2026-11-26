@@ -54,6 +54,26 @@ export async function connectQoreX(): Promise<string> {
   return key.bech32Address;
 }
 
+/**
+ * Trigger QoreX's own access/unlock prompt from an explicit user interaction.
+ * Recent QoreX extensions wake the vault for enable/getKey while locked.
+ * Older extensions may reject instead; the caller must show manual guidance.
+ * This never signs or broadcasts a transaction.
+ */
+export async function requestQoreXUnlock(expectedAddress: string): Promise<void> {
+  const native = getQorexNative();
+  if (!native) throw new QoreXConnectError('missing', 'Install or enable QoreX to continue.');
+  try {
+    await native.enable(NATIVE_CHAIN);
+    const key = await native.getKey(NATIVE_CHAIN);
+    if (key.bech32Address.toLowerCase() !== expectedAddress.toLowerCase()) {
+      throw new Error('The active QoreX wallet has changed. Reconnect your original address.');
+    }
+  } catch (error) {
+    throw classifyQoreXError(error) ?? error;
+  }
+}
+
 export async function nativeSend(fromAddress: string, toAddress: string, denom: string, amount: string, memo: string) {
   if (!/^qor1[023456789acdefghjklmnpqrstuvwxyz]{38}$/.test(fromAddress) ||
       !/^qor1[023456789acdefghjklmnpqrstuvwxyz]{38}$/.test(toAddress) ||
