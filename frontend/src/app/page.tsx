@@ -242,7 +242,7 @@ export default function Home(){
    try{await api.logout();}catch(e){setError(e instanceof Error?e.message:'Could not sign out');return;}
    setWalletIssue(null);setWalletMessage('');setSignedIn(false);setNativeAddress('');setGasBalance(null);setPendingLogin(null);
    setNeedsFaucet(false);setAccessToken('');setSubscription(null);setUsage(null);setRecentProjects([]);
-   setProject(null);setAudit(null);setPqcScan(null);setPqcWalletLocked(false);setPaymentIntent(null);setPaymentHash('');setFunding(null);setFundingMessage('');setFundingError('');
+   setProject(null);setAudit(null);setPqcScan(null);setPqcWalletLocked(false);setPqcProjectId('');setPqcInputMode('project');setPqcSource('');setPqcUploads([]);setPaymentIntent(null);setPaymentHash('');setFunding(null);setFundingMessage('');setFundingError('');
    setAllAudits([]);setTransactions([]);setMoreAudits(false);setMoreTransactions(false);setAuditMessages([]);setSelectedAuditId('');
    setPendingPayments([]);setPendingPaymentError('');setManualPaymentHash('');
  }
