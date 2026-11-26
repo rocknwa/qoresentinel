@@ -125,8 +125,7 @@ def usage(wallet:str):
     audits=storage.owner_recent_audit_count(wallet,since)
     assistant_limit=assistant_quota(wallet)
     questions=storage.usage_count(wallet,'assistant',since)
-    pqc_scans=storage.usage_count(wallet,'pqc',since)
     return {'plan':ent['plan'],'expires_at':ent['expires_at'],'window':'rolling-24h',
       'audits':{'used':audits,'limit':daily,'remaining':max(0,daily-audits)},
       'assistant':{'used':questions,'limit':assistant_limit,'remaining':max(0,assistant_limit-questions)},
-      'pqc':{'used':pqc_scans,'limit':15,'remaining':max(0,15-pqc_scans)}}
+      'pqc':{'used':0,'limit':None,'remaining':None,'history_enabled':False}}

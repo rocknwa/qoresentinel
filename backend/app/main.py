@@ -189,17 +189,48 @@ def audit_conversation_question(job_id:str,payload:AuditQuestion,owner:str=Depen
         raise HTTPException(409,'Could not append audit discussion')
     return result
 
+def _pqc_inventory(files:dict[str,str]):
+    """Stateless scanner: no audit job, saved report, subscription charge, or scan history."""
+    if not files:raise HTTPException(422,'No Solidity source provided')
+    try:return pqc.scan(files)
+    except (RuntimeError,ValueError) as exc:
+        raise HTTPException(502,'PQC scanner failed; check server logs') from exc
+
+
 @app.post('/api/v1/projects/{project_id}/pqc/scan')
 def scan_pqc(project_id:str,owner:str=Depends(require_wallet)):
     row=storage.get_project(project_id,owner)
     if not row:raise HTTPException(404,'Project not found')
-    files=json.loads(row['files'])
-    if not files:raise HTTPException(422,'Project has no source files')
-    since=(datetime.now(timezone.utc)-timedelta(days=1)).isoformat()
-    if not storage.reserve_usage(owner,'pqc',15,since):
-        raise HTTPException(429,'Daily PQC scan limit reached')
-    try:return pqc.scan(files)
-    except (RuntimeError,ValueError) as exc:raise HTTPException(502,'PQC scanner failed; check server logs') from exc
+    return _pqc_inventory(json.loads(row['files']))
+
+
+@app.post('/api/v1/pqc/scan')
+def scan_pqc_paste(payload:PasteInput,owner:str=Depends(require_wallet)):
+    """Scan pasted Solidity without creating a project or saving its source."""
+    try:source=ingest_paste(payload.source)
+    except BadSource as exc:raise as_http_error(exc) from exc
+    return _pqc_inventory(source)
+
+
+@app.post('/api/v1/pqc/scan/files')
+async def scan_pqc_upload(files:list[UploadFile]=File(...),owner:str=Depends(require_wallet)):
+    """Analyze uploaded .sol files or a ZIP in memory; never store a scan or upload."""
+    if len(files)>80:raise HTTPException(422,'Too many files')
+    if len(files)!=1 and any((f.filename or '').lower().endswith('.zip') for f in files):
+        raise HTTPException(422,'Submit ZIP by itself')
+    try:
+        if len(files)==1 and (files[0].filename or '').lower().endswith('.zip'):
+            data=await files[0].read(4_000_001)
+            sources=ingest_zip(data)
+        else:
+            items=[]
+            for upload in files:
+                data=await upload.read(2_000_001)
+                items.append((upload.filename or '',data))
+            sources=ingest_files(items)
+    except BadSource as exc:raise as_http_error(exc) from exc
+    return _pqc_inventory(sources)
+
 
 @app.get('/api/v1/qorechain/transactions/{tx_hash}')
 def qore_tx(tx_hash:str):return chain.transaction_evidence(tx_hash)
