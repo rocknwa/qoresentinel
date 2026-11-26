@@ -38,3 +38,19 @@
 .finding-meta strong{color:#e1eaf2;line-height:1.5;font-size:14px}
 .finding-item pre{font-family:inherit;white-space:pre-wrap;overflow-wrap:anywhere;color:#aebfd2;font-size:12px;line-height:1.65;max-height:340px;overflow:auto}
 .history-load-more{display:block;margin:18px auto 0}
+
+/* Checkout balance preflight */
+.checkout-funding{margin:16px 0;padding:16px;border:1px solid #344a60;background:#101e2d;border-radius:8px}
+.checkout-funding-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.checkout-funding-head strong{font-size:14px;color:#ddeaf7}
+.checkout-funding-head .secondary,.checkout-funding-actions .secondary{display:inline-flex;gap:7px;align-items:center;text-decoration:none}
+.checkout-funding-data{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.checkout-funding-data>div{display:flex;flex-direction:column;gap:7px;padding:12px;border:1px solid #2b435a;border-radius:6px}
+.checkout-funding-data span{font-size:12px;color:#93aac1}
+.checkout-funding-data strong{font-size:14px;color:#ebf5ff}
+.checkout-funding-warning{margin-top:14px;padding:13px;border:1px solid #956b3c;background:#32281d;border-radius:7px;display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.checkout-funding-warning>svg{flex-shrink:0;color:#ffc47a;margin-top:2px}
+.checkout-funding-warning p{flex:1;min-width:200px;margin:0;color:#ffe1b5;font-size:13px;line-height:1.6}
+.checkout-funding-actions{display:flex;flex-wrap:wrap;gap:8px}
+.checkout-funding-error{color:#ffb2b9;font-size:13px;margin:12px 0 0}
+@media(max-width:640px){.checkout-funding-data{grid-template-columns:1fr}.checkout-funding-actions{width:100%}}

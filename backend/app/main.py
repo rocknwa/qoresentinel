@@ -176,6 +176,10 @@ def scan_pqc(project_id:str,owner:str=Depends(require_wallet)):
 @app.get('/api/v1/qorechain/transactions/{tx_hash}')
 def qore_tx(tx_hash:str):return chain.transaction_evidence(tx_hash)
 
+@app.get('/api/v1/payments/plans/{plan}')
+def payment_plan_quote(plan:str,owner:str=Depends(require_wallet)):
+    return payments.plan_quote(plan)
+
 @app.post('/api/v1/payments/intents',status_code=201)
 def new_intent(payload:PlanInput,owner:str=Depends(require_wallet)):return payments.create(owner,payload.plan)
 

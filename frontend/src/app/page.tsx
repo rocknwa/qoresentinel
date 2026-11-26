@@ -1,7 +1,7 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
 import {Activity,ArrowRight,Bell,BookOpen,CheckCircle2,ChevronDown,CircleAlert,Clock3,CloudUpload,Code2,CreditCard,Download,FileCode2,FileSearch,FileText,Fingerprint,FolderOpen,HelpCircle,Hexagon,LayoutDashboard,LockKeyhole,Menu,MessageSquareText,Plus,Radio,RefreshCcw,Search,Settings2,Shield,ShieldAlert,ShieldCheck,Sparkles,Upload,Wallet, X} from 'lucide-react';
-import {api,setAccessToken,type Audit,type AuditSummary,type AuditMessage,type ChainTx,type Project,type PqcScan,type TxEvidence,type PaymentIntent} from '@/lib/api';
+import {api,setAccessToken,type Audit,type AuditSummary,type AuditMessage,type ChainTx,type Project,type PqcScan,type TxEvidence,type PaymentIntent,type PlanQuote} from '@/lib/api';
 import {connectQoreX,loginProof,nativeSend,sendHybridProof,FAUCET_URL} from '@/lib/wallet';
 
 type View='overview'|'new-audit'|'audit-progress'|'audit-results'|'audit-history'|'transaction-history'|'assistant'|'pqc'|'billing'|'settings';
@@ -39,6 +39,15 @@ export default function Home(){
  const [txHash,setTxHash]=useState('');const [hybridSendStatus,setHybridSendStatus]=useState('');const [txEvidence,setTxEvidence]=useState<TxEvidence|null>(null);
  const [paymentIntent,setPaymentIntent]=useState<PaymentIntent|null>(null);
  const [paymentHash,setPaymentHash]=useState('');const [paymentResult,setPaymentResult]=useState('');
+ const [funding,setFunding]=useState<{quote:PlanQuote;fusdRaw:string;qorRaw:string}|null>(null);
+ const [fundingLoading,setFundingLoading]=useState(false);
+ const [fundingMessage,setFundingMessage]=useState('');
+ const [fundingError,setFundingError]=useState('');
+ function displayUnits(raw:string){
+   const digits=raw.padStart(7,'0');const decimals=digits.slice(-6).replace(/0+$/,'');
+   return digits.slice(0,-6)+(decimals?'.'+decimals:'');
+ }
+
  const [subscription,setSubscription]=useState<{plan:string;expires_at:number|null}|null>(null);
  const [question,setQuestion]=useState('');const [assistantAnswer,setAssistantAnswer]=useState('');
  const [allAudits,setAllAudits]=useState<AuditSummary[]>([]);
@@ -135,7 +144,7 @@ export default function Home(){
  }
  function logout(){setSignedIn(false);setNativeAddress('');setGasBalance(null);setPendingLogin(null);
    setNeedsFaucet(false);setAccessToken('');setSubscription(null);setRecentProjects([]);
-   setProject(null);setAudit(null);setPqcScan(null);setPaymentIntent(null);setPaymentHash('');
+   setProject(null);setAudit(null);setPqcScan(null);setPaymentIntent(null);setPaymentHash('');setFunding(null);setFundingMessage('');setFundingError('');
    setAllAudits([]);setTransactions([]);setMoreAudits(false);setMoreTransactions(false);setAuditMessages([]);setSelectedAuditId('');}
  useEffect(()=>{if(!jobId||!signedIn)return;
    let closed=false;
@@ -196,21 +205,70 @@ export default function Home(){
    catch(e){setError(e instanceof Error?e.message:'Transaction lookup failed');}
    finally{setBusy(false);}
  }
+
+ async function refreshFunding(){
+   if(!signedIn||!nativeAddress)return null;
+   setFundingLoading(true);setFundingError('');
+   try{
+     const quote=await api.planQuote('pro');
+     const [gas,fusd]=await Promise.all([
+       api.nativeBalance(nativeAddress),
+       api.nativeBalance(nativeAddress,quote.denom)
+     ]);
+     const balance={quote,fusdRaw:fusd.amount_raw,qorRaw:gas.amount_raw};
+     setFunding(balance);setGasBalance(gas.amount_raw);setNeedsFaucet(gas.low_gas);
+     const missing=BigInt(fusd.amount_raw)<BigInt(quote.amount_raw);
+     const reason=[
+       missing?'Insufficient fUSD. Available '+displayUnits(fusd.amount_raw)+' fUSD; Pro requires '+quote.amount_fusd+' fUSD.':'',
+       gas.low_gas?'QOR balance is below 10 QOR; additional gas funding is required.':'',
+       missing||gas.low_gas?'Claim test tokens from the faucet, then refresh balances before checkout.':''
+     ].filter(Boolean).join(' ');
+     setFundingMessage(reason);
+     return {quote,ready:!missing&&!gas.low_gas};
+   }catch(err){
+     setFunding(null);
+     setFundingMessage('');
+     setFundingError(err instanceof Error?err.message:'Could not check testnet balances');
+     throw err;
+   }finally{setFundingLoading(false);}
+ }
+ useEffect(()=>{
+   if(view!=='billing'||!signedIn||!nativeAddress)return;
+   void refreshFunding().catch(()=>{});
+   // Refresh on entry or wallet change. Checkout also rechecks immediately.
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+ },[view,signedIn,nativeAddress]);
  async function checkout(plan:'pro'){
    if(!signedIn||!nativeAddress){setError('Sign in using your QoreX native wallet first.');return;}
-   setBusy(true);setError('');setPaymentResult('');setPaymentHash('');try{
-     const intent=await api.intent(plan);setPaymentIntent(intent);
-     setNotice('Payment intent created. A QoreX native fUSD transfer requires your approval.');
-   }catch(e){setError(e instanceof Error?e.message:'Checkout unavailable');}finally{setBusy(false);}}
- async function sendPayment(){if(!paymentIntent||!nativeAddress)return;
-   setBusy(true);setError('');try{
-     const gas=await refreshGas(nativeAddress);
-     if(gas.low_gas)throw new Error('Low testnet QOR. Claim gas from the faucet before paying.');
-     const funds=await api.nativeBalance(nativeAddress,paymentIntent.denom);
-     if(BigInt(funds.amount_raw)<BigInt(paymentIntent.amount_raw))throw new Error('Insufficient native fUSD. Claim test tokens from the faucet.');
+   if(paymentHash){setFundingError('A transaction is already pending verification. Verify it before starting another checkout.');return;}
+   setBusy(true);setError('');setFundingError('');
+   try{
+     const balance=await refreshFunding();
+     if(!balance?.ready){setPaymentIntent(null);return;}
+     const intent=await api.intent(plan);
+     if(intent.amount_raw!==balance.quote.amount_raw||intent.denom!==balance.quote.denom){
+       setPaymentIntent(null);setFundingError('The plan price changed during checkout. Refresh and try again.');return;
+     }
+     setPaymentResult('');setPaymentIntent(intent);
+     setNotice('Payment details created. Review the recipient and approve the native fUSD transfer.');
+   }catch(err){setFundingError(err instanceof Error?err.message:'Checkout unavailable');}
+   finally{setBusy(false);}
+ }
+ async function sendPayment(){
+   if(!paymentIntent||!nativeAddress||paymentHash)return;
+   setBusy(true);setError('');setFundingError('');
+   try{
+     const balance=await refreshFunding();
+     if(!balance?.ready)return;
+     if(balance.quote.amount_raw!==paymentIntent.amount_raw||balance.quote.denom!==paymentIntent.denom){
+       setFundingError('Payment details no longer match the configured plan. Start a new checkout.');return;
+     }
      const result=await nativeSend(nativeAddress,paymentIntent.recipient,paymentIntent.denom,paymentIntent.amount_raw,paymentIntent.memo);
-     setPaymentHash(result.txHash);setPaymentResult('Transaction submitted. Verify it on-chain to activate your plan.');
-   }catch(e){setError(e instanceof Error?e.message:'Wallet declined or payment failed');}finally{setBusy(false);}}
+     setPaymentHash(result.txHash);
+     setPaymentResult('Transaction submitted. Verify the hash on-chain to activate your plan.');
+   }catch(err){setError(err instanceof Error?err.message:'Wallet declined or payment failed');}
+   finally{setBusy(false);}
+ }
  async function confirmPayment(){if(!paymentIntent||!paymentHash)return;setBusy(true);setError('');
    try{const result=await api.verifyPayment(paymentIntent.id,paymentHash);
      setPaymentResult(result.status==='paid'?'Payment verified. Your testnet plan is active.':`Awaiting chain confirmation: ${result.reason||'pending'}`);
@@ -239,7 +297,7 @@ export default function Home(){
   <div className="sidebar-bottom"><div className="sidebar-footnote"><Shield size={17}/><div>QORECHAIN TESTNET<small>{nativeAddress?`${nativeAddress.slice(0,9)}…`:'qorechain-diana'}</small></div></div><div className="profile"><div className="avatar">QS</div><div><strong>Developer</strong><span>Local workspace</span></div><Settings2 size={15}/></div></div>
  </aside>
  {menuOpen&&<button className="scrim" onClick={()=>setMenuOpen(false)} aria-label="Close navigation"/>}
- <div className="main-area"><header className="topbar"><div className="topbar-left"><button className="mobile-open" onClick={()=>setMenuOpen(true)} aria-label="Open navigation"><Menu size={21}/></button><span>Workspace</span><span className="slash">/</span><strong>{menu.find(item=>item.id===view)?.name}</strong></div><div className="topbar-actions"><span className={`connection ${backend}`}><span className="connection-dot"/>{backend==='online'?'API Connected':backend==='checking'?'Checking API':'API Offline'}</span>{needsFaucet&&<a className="wallet-connect" href={FAUCET_URL} target="_blank" rel="noreferrer" title="Claim testnet QOR">Faucet</a>}<button className="wallet-connect" disabled={busy} onClick={signedIn?logout:pendingLogin?verifyPendingLogin:signInNative} title={signedIn?'Sign out':'Authenticate using a wallet-approved native transaction'}><Wallet size={14}/>{signedIn?`${nativeAddress.slice(0,9)}… Sign out`:pendingLogin?'Verify login transaction':busy?'Connecting…':'Sign in with QoreX'}</button><button className="new-audit-top" onClick={()=>navigate('new-audit')}><Plus size={16}/> New Audit</button></div></header>
+ <div className="main-area"><header className="topbar"><div className="topbar-left"><button className="mobile-open" onClick={()=>setMenuOpen(true)} aria-label="Open navigation"><Menu size={21}/></button><span>Workspace</span><span className="slash">/</span><strong>{menu.find(item=>item.id===view)?.name}</strong></div><div className="topbar-actions"><span className={`connection ${backend}`}><span className="connection-dot"/>{backend==='online'?'API Connected':backend==='checking'?'Checking API':'API Offline'}</span><a className="wallet-connect" href={FAUCET_URL} target="_blank" rel="noreferrer" title="Claim testnet QOR or fUSD">Faucet</a><button className="wallet-connect" disabled={busy} onClick={signedIn?logout:pendingLogin?verifyPendingLogin:signInNative} title={signedIn?'Sign out':'Authenticate using a wallet-approved native transaction'}><Wallet size={14}/>{signedIn?`${nativeAddress.slice(0,9)}… Sign out`:pendingLogin?'Verify login transaction':busy?'Connecting…':'Sign in with QoreX'}</button><button className="new-audit-top" onClick={()=>navigate('new-audit')}><Plus size={16}/> New Audit</button></div></header>
  <main className="page">
  {!signedIn&&<div className={`native-login-banner ${needsFaucet?'low-gas':''}`}>
   <div><strong>{needsFaucet?'Low testnet QOR balance':'QoreX Native authentication'}</strong>
@@ -284,7 +342,18 @@ export default function Home(){
  </section></>:<section className="panel"><Empty icon={ShieldAlert} title="No audit selected" desc="Open a saved report from Audit History without running another audit." action={<button className="primary" onClick={()=>navigate('audit-history')}>Open audit history <ArrowRight size={16}/></button>}/></section>}</>}
  {view==='assistant'&&<><Header kicker="SECURITY / AI ASSISTANT" title="AI security assistant" sub="Discuss submitted Solidity source and audit evidence."/><section className="panel"><div className="panel-head"><h2>Project security analysis</h2><Status tone={project?'cyan':'neutral'}>{project?.name||'Select a project'}</Status></div>{project?<><label className="field-label" htmlFor="assistant-question">Your question</label><textarea id="assistant-question" className="field" rows={4} maxLength={2000} placeholder="Which access-control assumptions should I verify?" value={question} onChange={e=>setQuestion(e.target.value)}/><button className="primary" disabled={busy||!question.trim()} onClick={askSecurityAssistant}><MessageSquareText size={16}/> Ask assistant</button>{assistantAnswer&&<><div className="section-separator"/><pre className="report">{assistantAnswer}</pre><p className="help-text">AI-generated response grounded in supplied files; verify any claims independently.</p></>}</>:<Empty icon={MessageSquareText} title="Submit a contract to begin" desc="The assistant uses source files from your workspace. Open a project first." action={<button className="secondary" onClick={()=>navigate('new-audit')}>Submit source <ArrowRight size={16}/></button>}/>}</section></>}
  {view==='pqc'&&<><Header kicker="QUANTUM RESILIENCE / INVENTORY" title="Post-Quantum Readiness" sub="Inspect source-level cryptographic references and QoreChain hybrid-signature evidence."/><div className="stats small-stats"><div className="stat"><div className="stat-label">CRYPTO COMPONENTS</div><strong>{pqcScan?.components??'—'}</strong><span>{pqcScan?.method||'No scan yet'}</span></div><div className="stat"><div className="stat-label">HYBRID PROOF</div><strong className="stat-word">{txEvidence?.chain_reports_verified?'CHAIN VERIFIED':'—'}</strong><span>{txEvidence?.found?'QoreChain testnet evidence':'No inspected transaction'}</span></div><div className="stat"><div className="stat-label">CBOM</div><strong className="stat-word">{pqcScan?.cbom?'AVAILABLE':'—'}</strong><span>CycloneDX inventory</span></div></div><div className="settings-grid"><section className="panel"><div className="panel-head"><h2>Cryptographic inventory</h2><Status tone="cyan">SOLIDITY SOURCE</Status></div>{project?<><p className="plain-copy">{project.name}</p><button className="primary" disabled={busy} onClick={runPqc}><Fingerprint size={16}/> Analyze source</button></>:<Empty icon={FileCode2} title="No submitted project" desc="Run a source submission to begin cryptographic inventory." action={<button className="secondary" onClick={()=>navigate('new-audit')}>Open new audit</button>}/>} {pqcScan&&<><div className="section-separator"/><p className="help-text">{pqcScan.limitations}</p><div className="service-list">{pqcScan.evidence.slice(0,30).map((e,i)=><div key={i}><span><Code2 size={14}/>{e.algorithm} — {e.file}:{e.line}</span><Status>{e.classification}</Status></div>)}</div><button className="secondary" onClick={()=>{const a=document.createElement('a');const url=URL.createObjectURL(new Blob([JSON.stringify(pqcScan.cbom,null,2)],{type:'application/json'}));a.href=url;a.download='qoresentinel-cbom.json';a.click();URL.revokeObjectURL(url);}}><Download size={16}/> Export CBOM</button></>}</section><section className="panel"><div className="panel-head"><h2>QoreChain hybrid-signature evidence</h2><Status tone="cyan">DIANA TESTNET</Status></div><div className="info-note"><ShieldCheck size={16}/>A hybrid proof sends 1 uqor (0.000001 testnet QOR) from your QoreX native address back to itself. Network fees apply. Your wallet will request approval.</div><button className="secondary" disabled={!nativeAddress||busy} onClick={makeHybridProof}><ShieldCheck size={15}/> Send hybrid testnet proof</button>{hybridSendStatus&&<p className="help-text">{hybridSendStatus}</p>}<div className="section-separator"/><label className="field-label" htmlFor="proof-hash">Native transaction hash</label><input id="proof-hash" className="field" value={txHash} onChange={e=>setTxHash(e.target.value)} placeholder="0x… (64 hex characters)"/><button className="secondary" disabled={busy||!txHash.trim()} onClick={inspectTx}><Search size={15}/> Inspect transaction</button>{txEvidence&&<div className="service-list"><div><span>Found on chain</span><Status tone={txEvidence.found?'good':'warn'}>{txEvidence.found?'Yes':'No'}</Status></div>{txEvidence.found&&<><div><span>Hybrid layer present</span><Status tone={txEvidence.hybrid_layer_present?'good':'warn'}>{txEvidence.hybrid_layer_present?'Yes':'No'}</Status></div><div><span>Chain-reported verification</span><Status tone={txEvidence.chain_reports_verified?'good':'warn'}>{txEvidence.chain_reports_verified?'Verified':'Not verified'}</Status></div><p className="help-text">{txEvidence.verification_method}</p></>}</div>}</section></div></>}
- {view==='billing'&&<><Header kicker="MANAGEMENT / BILLING & USAGE" title="Subscriptions & usage" sub="Purchase audit plans using QoreX native fUSD bank transfers. All payments require on-chain confirmation."/><div className="stats small-stats"><div className="stat"><div className="stat-label">CURRENT PLAN</div><strong className="stat-word">{subscription?.plan?.toUpperCase()||'FREE'}</strong><span>{subscription?.expires_at?`Expires ${new Date(subscription.expires_at*1000).toLocaleDateString()}`:'No paid entitlement'}</span></div><div className="stat"><div className="stat-label">NETWORK</div><strong className="stat-word">DIANA</strong><span>QoreChain 9800 · Test tokens only</span></div><div className="stat"><div className="stat-label">CHECKOUT</div><strong className="stat-word">{paymentResult?'IN PROGRESS':'—'}</strong><span>Backend verifies native bank transfers</span></div></div><section className="panel"><div className="panel-head"><h2>Testnet fUSD checkout</h2><Status tone="cyan">NO REAL MONETARY VALUE</Status></div><p className="plain-copy">Approve a native QoreX bank transfer. Access activates only after the backend verifies the sender, recipient, exact fUSD amount, memo, hybrid signature and confirmations.</p>{!signedIn?<button className="primary" onClick={signInNative}><Wallet size={16}/> Sign in with QoreX</button>:<><div className="quick-grid"><button disabled={busy} onClick={()=>checkout('pro')}><ShieldCheck/><strong>Pro — 30 days</strong><span>View and approve a testnet payment</span><ArrowRight size={15}/></button></div>{paymentIntent&&<div className="checkout-details"><div className="section-separator"/><div className="service-list"><div><span>Amount (fUSD)</span><strong>{paymentIntent.amount_fusd}</strong></div><div><span>Chain</span><strong>{paymentIntent.network}</strong></div><div><span>Recipient</span><span className="mono-address">{paymentIntent.recipient}</span></div><div><span>Payment window</span><span>{new Date(paymentIntent.expires_at*1000).toLocaleTimeString()}</span></div></div><button className="primary" disabled={busy||Boolean(paymentHash)} onClick={sendPayment}><Wallet size={16}/> Approve native fUSD transfer</button>{paymentHash&&<><p className="help-text">Transaction: {paymentHash}</p><button className="secondary" disabled={busy} onClick={confirmPayment}><CheckCircle2 size={16}/> Verify payment on-chain</button></>}{paymentResult&&<div className="info-note"><Clock3 size={16}/>{paymentResult}</div>}</div>}</>}</section></>}
+ {view==='billing'&&<><Header kicker="MANAGEMENT / BILLING & USAGE" title="Subscriptions & usage" sub="Purchase audit plans using QoreX native fUSD bank transfers. All payments require on-chain confirmation."/><div className="stats small-stats"><div className="stat"><div className="stat-label">CURRENT PLAN</div><strong className="stat-word">{subscription?.plan?.toUpperCase()||'FREE'}</strong><span>{subscription?.expires_at?`Expires ${new Date(subscription.expires_at*1000).toLocaleDateString()}`:'No paid entitlement'}</span></div><div className="stat"><div className="stat-label">NETWORK</div><strong className="stat-word">DIANA</strong><span>QoreChain 9800 · Test tokens only</span></div><div className="stat"><div className="stat-label">CHECKOUT</div><strong className="stat-word">{paymentResult?'IN PROGRESS':'—'}</strong><span>Backend verifies native bank transfers</span></div></div><section className="panel"><div className="panel-head"><h2>Testnet fUSD checkout</h2><Status tone="cyan">NO REAL MONETARY VALUE</Status></div><p className="plain-copy">Approve a native QoreX bank transfer. Access activates only after the backend verifies the sender, recipient, exact fUSD amount, memo, hybrid signature and confirmations.</p>
+ {signedIn&&<div className="checkout-funding" aria-live="polite">
+   <div className="checkout-funding-head"><strong>Wallet balance check</strong><button className="secondary" disabled={busy||fundingLoading} onClick={()=>void refreshFunding().catch(()=>{})}><RefreshCcw size={14}/>{fundingLoading?'Checking…':'Refresh balances'}</button></div>
+   {funding&&<div className="checkout-funding-data">
+     <div><span>Available fUSD</span><strong>{displayUnits(funding.fusdRaw)} fUSD</strong></div>
+     <div><span>Pro — 30 days</span><strong>{funding.quote.amount_fusd} fUSD</strong></div>
+     <div><span>QOR for gas</span><strong>{displayUnits(funding.qorRaw)} QOR</strong></div>
+   </div>}
+   {!funding&&fundingLoading&&<p className="help-text">Checking fUSD and QOR balances on Diana testnet…</p>}
+   {fundingError&&<p role="alert" className="checkout-funding-error">{fundingError}</p>}
+   {fundingMessage&&<div className="checkout-funding-warning" role="status"><CircleAlert size={17}/><p>{fundingMessage}</p><div className="checkout-funding-actions"><a className="secondary" href={FAUCET_URL} target="_blank" rel="noreferrer">Open faucet <ArrowRight size={14}/></a><button className="secondary" onClick={()=>void navigator.clipboard.writeText(FAUCET_URL)}>Copy faucet link</button></div></div>}
+ </div>}{!signedIn?<button className="primary" onClick={signInNative}><Wallet size={16}/> Sign in with QoreX</button>:<><div className="quick-grid"><button disabled={busy||fundingLoading||Boolean(paymentHash)||!funding||Boolean(fundingMessage)||Boolean(fundingError)} onClick={()=>checkout('pro')}><ShieldCheck/><strong>Pro — 30 days</strong><span>View and approve a testnet payment</span><ArrowRight size={15}/></button></div>{paymentIntent&&<div className="checkout-details"><div className="section-separator"/><div className="service-list"><div><span>Amount (fUSD)</span><strong>{paymentIntent.amount_fusd}</strong></div><div><span>Chain</span><strong>{paymentIntent.network}</strong></div><div><span>Recipient</span><span className="mono-address">{paymentIntent.recipient}</span></div><div><span>Payment window</span><span>{new Date(paymentIntent.expires_at*1000).toLocaleTimeString()}</span></div></div><button className="primary" disabled={busy||fundingLoading||Boolean(paymentHash)||Boolean(fundingMessage)||Boolean(fundingError)} onClick={sendPayment}><Wallet size={16}/> Approve native fUSD transfer</button>{paymentHash&&<><p className="help-text">Transaction: {paymentHash}</p><button className="secondary" disabled={busy} onClick={confirmPayment}><CheckCircle2 size={16}/> Verify payment on-chain</button></>}{paymentResult&&<div className="info-note"><Clock3 size={16}/>{paymentResult}</div>}</div>}</>}</section></>}
  {view==='settings'&&<><Header kicker="MANAGEMENT / SETTINGS" title="Wallet & privacy" sub="Connected identities, security preferences, and data access."/><div className="settings-grid"><section className="panel"><div className="panel-head"><h2>Wallet connections</h2></div><div className="service-list"><div><span>QoreX Native</span><Status tone={nativeAddress?'good':'neutral'}>{nativeAddress?nativeAddress.slice(0,14)+'…':'Not connected'}</Status></div><div><span>QoreX authenticated session</span><Status tone={signedIn?'good':'neutral'}>{signedIn?nativeAddress.slice(0,14)+'…':'Not signed in'}</Status></div></div><button className="secondary" onClick={signedIn?logout:pendingLogin?verifyPendingLogin:signInNative}><LockKeyhole size={15}/>{signedIn?'Sign out of wallet session':pendingLogin?'Verify pending login':'Authenticate QoreX Native wallet'}</button></section><section className="panel"><div className="panel-head"><h2>Privacy & security</h2></div><p className="plain-copy">Never disclose recovery phrases or private keys. Security findings are AI-assisted and should be verified independently. Testnet tokens have no real monetary value.</p><button className="secondary" onClick={()=>navigate('transaction-history')}><Activity size={16}/> View transaction history</button><div className="service-list"><div><span>Service health</span><Status tone={backend==='online'?'good':'warn'}>{backend}</Status></div><div><span>Session</span><Status tone={signedIn?'good':'neutral'}>{signedIn?'Wallet signed in':'Signed out'}</Status></div></div></section></div></>}
  {error&&view!=='audit-progress'&&<div role="alert" className="floating-error"><CircleAlert size={18}/><span>{error}</span><button onClick={()=>setError('')} aria-label="Dismiss error"><X size={16}/></button></div>}
  </main></div></div>
