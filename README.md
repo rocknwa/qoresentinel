@@ -108,6 +108,22 @@ QoreSentinel keeps contract security workflows tied to a verified wallet identit
 
 Saved audit history, detailed results, report conversations, subscription activity, and transaction history are organized by wallet. QoreX handles native transaction approvals, and FastAPI validates the corresponding QoreChain Diana evidence.
 
+## Acknowledgements
+
+We acknowledge Pashov Audit Group for the MIT-licensed `solidity-auditor` skill, including the twelve specialist-agent prompts and supporting audit methodology used in QoreSentinel's security-analysis workflow.
+
+QoreSentinel integrates these materials into a Python-based application architecture covering Solidity source ingestion, audit orchestration, cloud LLM providers, report generation, wallet authentication and QoreChain integrations.
+
+The upstream Pashov skills are MIT-licensed. Relevant upstream copyright and licence notices are preserved in accordance with the licence.
+
+QoreSentinel is an independent project and is not affiliated with or endorsed by Pashov Audit Group.
+
+**Upstream project:** [https://github.com/pashov/skills](https://github.com/pashov/skills)
+
+**Upstream copyright and licence notices:** [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+
+**AI usage and development disclosure:** [AI_USAGE.md](AI_USAGE.md)
+
 ## Contact
 
 **Therock Ani** — Creator & Lead Developer
