@@ -79,3 +79,9 @@
 /* Permanent audit detail links and copy action */
 .audit-link-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .history-item a.secondary{text-decoration:none}
+
+/* QoreScan inventory classifications */
+.pqc-risk-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:15px 0}
+.pqc-risk-count{display:flex;flex-direction:column;gap:5px;padding:12px;border:1px solid #30475d;background:#102334;border-radius:6px}
+.pqc-risk-count strong{font-size:20px;color:#d8f5ff}
+.pqc-risk-count span{font-size:11px;color:#a8bfd1;line-height:1.5}

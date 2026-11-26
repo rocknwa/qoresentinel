@@ -100,3 +100,33 @@ def entitlement(wallet:str):
     row=storage.subscription(wallet);now=int(time.time())
     if not row or row['expires_at']<=now:return {'plan':'free','active':True,'expires_at':None}
     return {'plan':row['plan'],'active':True,'expires_at':row['expires_at']}
+
+def audit_quota(wallet:str)->int:
+    """24-hour rolling quota; Free remains usable for competition testing."""
+    plan=entitlement(wallet)['plan']
+    if plan=='free' and os.getenv('QORE_REQUIRE_ACTIVE_PLAN','false').lower()=='true':
+        return 0
+    key='QORE_PRO_DAILY_AUDIT_LIMIT' if plan=='pro' else 'QORE_DAILY_AUDIT_LIMIT'
+    fallback='10' if plan=='pro' else '2'
+    try:return max(0,min(100,int(os.getenv(key,fallback))))
+    except ValueError:return int(fallback)
+
+def assistant_quota(wallet:str)->int:
+    plan=entitlement(wallet)['plan']
+    key='QORE_PRO_DAILY_ASSISTANT_LIMIT' if plan=='pro' else 'QORE_FREE_DAILY_ASSISTANT_LIMIT'
+    try:return max(0,min(500,int(os.getenv(key,'50' if plan=='pro' else '10'))))
+    except ValueError:return 50 if plan=='pro' else 10
+
+def usage(wallet:str):
+    from datetime import datetime,timedelta,timezone
+    since=(datetime.now(timezone.utc)-timedelta(days=1)).isoformat()
+    ent=entitlement(wallet)
+    daily=audit_quota(wallet)
+    audits=storage.owner_recent_audit_count(wallet,since)
+    assistant_limit=assistant_quota(wallet)
+    questions=storage.usage_count(wallet,'assistant',since)
+    pqc_scans=storage.usage_count(wallet,'pqc',since)
+    return {'plan':ent['plan'],'expires_at':ent['expires_at'],'window':'rolling-24h',
+      'audits':{'used':audits,'limit':daily,'remaining':max(0,daily-audits)},
+      'assistant':{'used':questions,'limit':assistant_limit,'remaining':max(0,assistant_limit-questions)},
+      'pqc':{'used':pqc_scans,'limit':15,'remaining':max(0,15-pqc_scans)}}

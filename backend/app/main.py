@@ -143,12 +143,14 @@ def start_audit(project_id:str,owner:str=Depends(require_wallet)):
     if os.getenv('QORE_ENABLE_LLM_AUDIT','false').lower()!='true':raise HTTPException(503,'Audit disabled or temporarily unavailable')
     if not any(os.getenv(k) for k in ('ANTHROPIC_API_KEY','OPENROUTER_API_KEY','GROQ_API_KEY','AGENTROUTER_API_KEY')):
         raise HTTPException(503,'No cloud audit provider is available')
-    if os.getenv('QORE_REQUIRE_ACTIVE_PLAN','false').lower()=='true' and payments.entitlement(owner)['plan']=='free':
-        raise HTTPException(402,'An active testnet audit plan is required')
-    if storage.owner_pending_audits(owner):raise HTTPException(429,'You already have a pending audit')
+    quota=payments.audit_quota(owner)
+    if quota==0:raise HTTPException(402,'An active Pro subscription is required')
     since=(datetime.now(timezone.utc)-timedelta(days=1)).isoformat()
-    if storage.owner_recent_audit_count(owner,since)>=max(1,int(os.getenv('QORE_DAILY_AUDIT_LIMIT','2'))):raise HTTPException(429,'Daily audit quota reached')
-    job=storage.create_job(project_id,owner)
+    reservation=storage.reserve_audit(owner,project_id,quota,since)
+    if reservation.get('error')=='pending':raise HTTPException(429,'You already have a pending audit')
+    if reservation.get('error')=='limit':raise HTTPException(429,'Daily audit quota reached')
+    if reservation.get('error'):raise HTTPException(404,'Project not found')
+    job=reservation['id']
     EXECUTOR.submit(_audit_task,job,files)
     return {'id':job,'status':'queued','completed_agents':0,'total_agents':12}
 
@@ -178,6 +180,9 @@ def audit_conversation_question(job_id:str,payload:AuditQuestion,owner:str=Depen
     row=storage.get_job(job_id,owner)
     if not row:raise HTTPException(404,'Audit not found')
     if row['status']!='completed':raise HTTPException(409,'Audit must finish before discussion')
+    since=(datetime.now(timezone.utc)-timedelta(days=1)).isoformat()
+    if not storage.reserve_usage(owner,'assistant',payments.assistant_quota(owner),since):
+        raise HTTPException(429,'Daily assistant usage limit reached')
     from .assistant import answer
     result=answer(row['project_id'],owner,payload.question,audit_id=job_id)
     if not storage.append_audit_exchange(job_id,owner,payload.question,result['answer']):
@@ -190,6 +195,9 @@ def scan_pqc(project_id:str,owner:str=Depends(require_wallet)):
     if not row:raise HTTPException(404,'Project not found')
     files=json.loads(row['files'])
     if not files:raise HTTPException(422,'Project has no source files')
+    since=(datetime.now(timezone.utc)-timedelta(days=1)).isoformat()
+    if not storage.reserve_usage(owner,'pqc',15,since):
+        raise HTTPException(429,'Daily PQC scan limit reached')
     try:return pqc.scan(files)
     except (RuntimeError,ValueError) as exc:raise HTTPException(502,'PQC scanner failed; check server logs') from exc
 
@@ -224,9 +232,18 @@ def verify_intent(intent_id:str,payload:VerifyTransfer,owner:str=Depends(require
 @app.get('/api/v1/subscriptions/me')
 def my_subscription(owner:str=Depends(require_wallet)):return payments.entitlement(owner)
 
+@app.get('/api/v1/subscriptions/usage')
+def subscription_usage(owner:str=Depends(require_wallet)):
+    return payments.usage(owner)
+
+
 class AssistantQuestion(BaseModel):question:str=Field(min_length=1,max_length=2000)
 @app.post('/api/v1/projects/{project_id}/assistant')
 def assistant_message(project_id:str,payload:AssistantQuestion,owner:str=Depends(require_wallet)):
+    if not storage.get_project(project_id,owner):raise HTTPException(404,'Project not found')
+    since=(datetime.now(timezone.utc)-timedelta(days=1)).isoformat()
+    if not storage.reserve_usage(owner,'assistant',payments.assistant_quota(owner),since):
+        raise HTTPException(429,'Daily assistant usage limit reached')
     from .assistant import answer
     return answer(project_id,owner,payload.question)
 
