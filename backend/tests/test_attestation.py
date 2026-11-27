@@ -4,14 +4,15 @@ from fastapi import HTTPException
 def test_attestation_private_nonexistent_and_incomplete(client, project_id):
     assert client.get('/api/v1/audits/does-not-exist/attestation').status_code == 404
     from app import storage
-    job = storage.create_job(project_id, storage.get_project(project_id, __import__('tests.conftest',fromlist=['TEST_WALLET']).TEST_WALLET)['owner'])['id']
+    from tests.conftest import TEST_WALLET
+    job = storage.create_job(project_id, TEST_WALLET)
     assert client.get(f'/api/v1/audits/{job}/attestation').status_code == 409
 
 def test_attestation_without_contract_and_verified(client, project_id, monkeypatch):
     from app import storage, chain, auth
     from tests.conftest import TEST_WALLET
     # Store completed report directly to exercise the independent read-only path.
-    job = storage.create_job(project_id,TEST_WALLET)['id']
+    job = storage.create_job(project_id,TEST_WALLET)
     report = "# Security report\nLow: demo\n"
     storage.set_job(job, status='completed', completed_agents=12, report=report)
     monkeypatch.delenv('QORE_ATTESTATION_CONTRACT', raising=False)
