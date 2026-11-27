@@ -166,6 +166,15 @@ def get_audit(job_id:str,owner:str=Depends(require_wallet)):
       'findings_status':'report_extracted_unverified',
       'error':row['error']}
 
+@app.get('/api/v1/audits/{job_id}/attestation')
+def audit_attestation(job_id:str,owner:str=Depends(require_wallet)):
+    """Read-only report hash and verification from the authenticated wallet's audit."""
+    row=storage.get_job(job_id,owner)
+    if not row:raise HTTPException(404,'Audit not found')
+    if row['status']!='completed':raise HTTPException(409,'Audit must complete before attestation')
+    from .attestation import report_status
+    return report_status(row['report'])
+
 @app.get('/api/v1/audits/{job_id}/messages')
 def audit_conversation(job_id:str,owner:str=Depends(require_wallet)):
     messages=storage.audit_message_history(job_id,owner)
