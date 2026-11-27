@@ -98,6 +98,9 @@ def reserve_attestation_request(job_id: str, owner: str, digest: str, max_daily:
     now = iso_now()
     since = datetime.fromtimestamp(datetime.now(timezone.utc).timestamp()-86400,timezone.utc).isoformat()
     with engine().begin() as conn:
+        if conn.dialect.name == 'postgresql':
+            scope = int.from_bytes(hashlib.sha256(('attestation:' + owner).encode()).digest()[:8], 'big', signed=True)
+            conn.execute(text('SELECT pg_advisory_xact_lock(:scope)'), {'scope':scope})
         job = conn.execute(select(audit_jobs.c.status, audit_jobs.c.report)
             .where((audit_jobs.c.id == job_id) & (audit_jobs.c.owner == owner))).first()
         if not job:
