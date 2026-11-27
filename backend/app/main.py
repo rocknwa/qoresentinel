@@ -3,7 +3,7 @@ import json
 import os
 from datetime import datetime,timedelta,timezone
 from concurrent.futures import ThreadPoolExecutor
-from fastapi import FastAPI,HTTPException,UploadFile,File,Depends,Request,Query,Response
+from fastapi import FastAPI,HTTPException,UploadFile,File,Depends,Request,Query,Response,BackgroundTasks
 from pydantic import BaseModel,Field
 from .auth import require_wallet,ChallengeRequest,VerifyRequest,challenge,verify
 from . import storage,auth,pqc,chain,payments
@@ -165,6 +165,43 @@ def get_audit(job_id:str,owner:str=Depends(require_wallet)):
       'findings':extract_findings(row['report']) if row['status']=='completed' else [],
       'findings_status':'report_extracted_unverified',
       'error':row['error']}
+
+@app.post('/api/v1/audits/{job_id}/attestation/request',status_code=202)
+def request_audit_attestation(job_id:str,tasks:BackgroundTasks,owner:str=Depends(require_wallet)):
+    """One bounded testnet publication per completed, wallet-owned audit."""
+    from . import attestation_worker
+    if not attestation_worker.enabled():
+        raise HTTPException(503,'Testnet attestation publishing is disabled')
+    row=storage.get_job(job_id,owner)
+    if not row:raise HTTPException(404,'Audit not found')
+    if row['status']!='completed' or not row['report']:
+        raise HTTPException(409,'Audit must complete before requesting attestation')
+    from .attestation import report_status
+    observed=report_status(row['report'])
+    if observed['status']=='not_configured':
+        raise HTTPException(503,'Attestation contract is not configured')
+    import hashlib
+    digest='0x'+hashlib.sha256(row['report'].encode('utf-8')).hexdigest()
+    result=storage.reserve_attestation_request(job_id,owner,digest)
+    if result.get('error')=='limit':
+        raise HTTPException(429,'Daily attestation limit reached (3 unique audits)')
+    if result.get('error'):
+        raise HTTPException(409,'Attestation request is unavailable')
+    if observed['status']=='attested':
+        storage.update_attestation_request(job_id,status='confirmed')
+        result['status']='confirmed'
+    elif result['status']=='queued':
+        tasks.add_task(attestation_worker.process,job_id)
+    return {'status':result['status'],'report_sha256':digest,'tx_hash':result.get('tx_hash')}
+
+@app.get('/api/v1/audits/{job_id}/attestation/request')
+def get_attestation_request(job_id:str,owner:str=Depends(require_wallet)):
+    from . import attestation_worker
+    if not storage.get_job(job_id,owner):
+        raise HTTPException(404,'Audit not found')
+    row=attestation_worker.reconcile(job_id,owner)
+    if not row:return {'status':'not_requested','tx_hash':None}
+    return {'status':row['status'],'tx_hash':row['tx_hash'],'report_sha256':row['report_digest']}
 
 @app.get('/api/v1/audits/{job_id}/attestation')
 def audit_attestation(job_id:str,owner:str=Depends(require_wallet)):

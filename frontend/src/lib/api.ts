@@ -3,6 +3,7 @@ export type AuditSummary={id:string;project_id:string;project_name:string;status
 export type AuditMessage={id:string;role:'user'|'assistant';body:string;created_at:string};
 export type ChainTx={tx_hash:string;kind:string;denom:string;amount_raw:string;status:string;created_at:string};
 export type ReportFinding={severity:string;title:string;evidence:string;source:string;verified:boolean};
+export type AttestationRequest={status:'not_requested'|'queued'|'processing'|'submitted'|'confirmed'|'failed';tx_hash:string|null;report_sha256?:string};
 export type AttestationStatus={
  status:'not_configured'|'not_attested'|'attested'; report_sha256:string;
  contract_address:string|null; chain_id:number; network:string; attested_at:string|null;
@@ -31,6 +32,8 @@ export const api={
  session:()=>request<{wallet:string;authenticated:boolean}>('/api/v1/auth/session'),
  logout:()=>request<{ok:boolean}>('/api/v1/auth/logout',{method:'POST'}),
  audits:(offset=0)=>request<{audits:AuditSummary[];has_more:boolean}>(`/api/v1/audits?limit=50&offset=${offset}`),
+ requestAttestation:(id:string)=>request<AttestationRequest>(`/api/v1/audits/${encodeURIComponent(id)}/attestation/request`,{method:'POST'}),
+ attestationRequest:(id:string)=>request<AttestationRequest>(`/api/v1/audits/${encodeURIComponent(id)}/attestation/request`),
  attestation:(id:string)=>request<AttestationStatus>(`/api/v1/audits/${encodeURIComponent(id)}/attestation`),
  auditMessages:(id:string)=>request<{messages:AuditMessage[]}>(`/api/v1/audits/${encodeURIComponent(id)}/messages`),
  auditQuestion:(id:string,question:string)=>request<{answer:string}>(`/api/v1/audits/${encodeURIComponent(id)}/messages`,json({question})),
