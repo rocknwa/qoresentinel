@@ -73,6 +73,90 @@ chain_transactions = Table('chain_transactions', metadata,
     UniqueConstraint('tx_hash','kind',name='uq_chain_transaction_kind'))
 
 
+# One immutable report hash per audited job. The request and settlement state
+# remain durable across Render restarts; only public transaction hashes are stored.
+attestation_requests = Table('attestation_requests', metadata,
+    Column('job_id', String(40), primary_key=True),
+    Column('owner', String(42), nullable=False),
+    Column('report_digest', String(66), nullable=False),
+    Column('status', String(20), nullable=False),
+    Column('tx_hash', String(70), nullable=True),
+    Column('created_at', String(35), nullable=False),
+    Column('updated_at', String(35), nullable=False),
+    Column('attempts', Integer, nullable=False, default=0))
+
+def get_attestation_request(job_id: str, owner: str):
+    return _one(attestation_requests, 'job_id', job_id, attestation_requests.c.owner == owner.lower())
+
+def reserve_attestation_request(job_id: str, owner: str, digest: str, max_daily: int = 3):
+    """Idempotently reserve one on-chain publication per completed audit.
+
+    A failed request without a prepared on-chain tx may be attempted twice.
+    Quota is counted per distinct audit job; retries do not evade the cap.
+    """
+    owner = owner.lower()
+    now = iso_now()
+    since = datetime.fromtimestamp(datetime.now(timezone.utc).timestamp()-86400,timezone.utc).isoformat()
+    with engine().begin() as conn:
+        job = conn.execute(select(audit_jobs.c.status, audit_jobs.c.report)
+            .where((audit_jobs.c.id == job_id) & (audit_jobs.c.owner == owner))).first()
+        if not job:
+            return {'error': 'not_found'}
+        if job.status != 'completed' or not job.report:
+            return {'error': 'not_completed'}
+        row = conn.execute(select(attestation_requests).where(attestation_requests.c.job_id == job_id)).mappings().first()
+        if row:
+            old = dict(row)
+            if old['owner'] != owner or old['report_digest'] != digest:
+                return {'error': 'conflict'}
+            if old['status'] == 'failed' and not old['tx_hash'] and old['attempts'] < 2:
+                conn.execute(update(attestation_requests).where(
+                    (attestation_requests.c.job_id == job_id) &
+                    (attestation_requests.c.status == 'failed') &
+                    (attestation_requests.c.tx_hash.is_(None))
+                ).values(status='queued', updated_at=now))
+                old['status'] = 'queued'
+            elif old['status'] == 'processing' and not old['tx_hash']:
+                try:
+                    last = datetime.fromisoformat(old['updated_at'])
+                    if (datetime.now(timezone.utc) - last).total_seconds() > 600 and old['attempts'] < 2:
+                        conn.execute(update(attestation_requests).where(
+                            (attestation_requests.c.job_id == job_id) &
+                            (attestation_requests.c.status == 'processing') &
+                            (attestation_requests.c.tx_hash.is_(None))
+                        ).values(status='queued', updated_at=now))
+                        old['status'] = 'queued'
+                except (ValueError,TypeError):
+                    pass
+            return old
+        count = conn.scalar(select(func.count()).select_from(attestation_requests).where(
+            (attestation_requests.c.owner == owner) & (attestation_requests.c.created_at >= since))) or 0
+        if count >= max_daily:
+            return {'error': 'limit'}
+        data = {'job_id': job_id, 'owner': owner, 'report_digest': digest,
+                'status': 'queued', 'tx_hash': None, 'created_at': now,
+                'updated_at': now, 'attempts': 0}
+        conn.execute(insert(attestation_requests).values(**data))
+        return data
+
+def claim_attestation_request(job_id: str):
+    now = iso_now()
+    with engine().begin() as conn:
+        result = conn.execute(update(attestation_requests).where(
+            (attestation_requests.c.job_id == job_id) & (attestation_requests.c.status == 'queued')
+        ).values(status='processing', updated_at=now, attempts=attestation_requests.c.attempts + 1))
+        return result.rowcount == 1
+
+def update_attestation_request(job_id: str, *, status: str, tx_hash: str | None = None):
+    now = iso_now()
+    with engine().begin() as conn:
+        values = {'status': status, 'updated_at': now}
+        if tx_hash is not None:
+            values['tx_hash'] = tx_hash
+        conn.execute(update(attestation_requests).where(attestation_requests.c.job_id == job_id).values(**values))
+
+
+
 def iso_now(): return datetime.now(timezone.utc).isoformat()
 
 def engine():

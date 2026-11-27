@@ -10,3 +10,6 @@ psycopg[binary]>=3.2,<4
 PyJWT>=2.9,<3
 eth-account>=0.13,<1
 qorescan==0.1.0
+
+# QoreChain eth-native hybrid EVM authorization (native Python, no Node runtime)
+qorechain-sdk==0.14.0
