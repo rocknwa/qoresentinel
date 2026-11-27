@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "strict": true, "target": "ES2022", "module": "node16",
+    "moduleResolution": "node16", "esModuleInterop": true,
+    "skipLibCheck": true, "noEmit": true, "types": ["node"], "lib": ["ES2023", "DOM"]
+  },
+  "include": ["hardhat.config.ts", "ignition", "test", "scripts"]
+}

@@ -42,3 +42,22 @@ jobs:
         run: npm install
       - name: Build frontend
         run: npm run build
+
+  onchain:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: onchain
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install
+      - name: Compile contract
+        run: npm run build
+      - name: Solidity unit tests
+        run: npm test
+      - name: TypeScript typecheck
+        run: npm run typecheck
