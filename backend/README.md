@@ -139,3 +139,61 @@ SQLAlchemy manages QoreSentinel's wallet-linked data model through the `projects
 The service brings together three evidence streams: **specialist audit reports and findings**, **QoreScan source-level cryptographic inventories**, and **QoreChain transaction and hybrid-signature records**. Each is preserved and presented in its own context, giving users a connected view of contract behavior, cryptographic dependencies, and network verification.
 
 For the user experience and navigation model, see the [QoreSentinel frontend](../frontend/README.md) and the [project overview](../README.md).
+
+
+## Automated report attestations (Diana only)
+
+The authenticated audit results page includes **Request on-chain attestation**.
+The API verifies that the requested audit belongs to the session's wallet, is
+completed, and has an immutable persisted Markdown report. It creates one
+idempotent request per audit, enforcing a maximum of three distinct requests
+per wallet per rolling 24 hours. Request status is stored in PostgreSQL.
+
+An isolated publish worker, running as a FastAPI background task, holds a
+PostgreSQL advisory lock on the publisher account. It verifies contract
+bytecode, contract publisher, chain 9800, and the account's registered PQC key.
+It signs a hybrid Native transaction to open a **one-transaction, target-scoped
+EVM window** for the deployed attestation contract, then signs only
+`attest(bytes32)` with the SHA-256 of the persisted report.
+
+**Render environment variables** (never commit or log secret values):
+
+- `QORE_ATTESTATION_ENABLED=true`
+- `QORE_ATTESTATION_CONTRACT=0x457962c68d6F3BeaAdAF47456402F57Fb40Fc6BF`
+- `QORE_ATTESTATION_PRIVATE_KEY=` the **same disposable testnet EVM key** that deployed the contract
+- `QORE_ATTESTATION_PQC_RECOVERY_CODE=` the **same QRC1 recovery code** that registered the key
+- `QORE_NETWORK=testnet`
+
+The publisher is **pinned** to `0x28ae5289681319a1b0c05b3ffbbb658d15ad33e9`;
+the contract destination is also pinned. Both guards fail closed if a key or
+destination is misconfigured. This is a hackathon-only signing design, not a
+production-grade key-management replacement.
+
+The API exposes `POST /api/v1/audits/{id}/attestation/request` (202) and
+`GET /api/v1/audits/{id}/attestation/request` for request and recovery status,
+in addition to the existing `GET /api/v1/audits/{id}/attestation` chain read.
+
+### Confirmation and recovery
+
+The EVM transaction hash is stored **before** broadcast to support recovery.
+A confirmed receipt and matching on-chain report digest are required before
+status becomes `confirmed`. If an EVM hash exists and the outcome is
+uncertain, the worker will **not** blindly resend a transaction. A signed
+transaction without confirmation remains `submitted` until checked again.
+Native-window transactions must confirm with a chain-reported hybrid signature.
+
+For the demo, the user can refresh the audit page to reconcile an existing
+transaction or resubmit a still-queued request. FastAPI background tasks are
+not a durable job queue; unusual interruptions may need operator inspection.
+Do not operate more than one independent publisher service against the same
+wallet without sharing its PostgreSQL database and lock.
+
+### Security boundaries
+
+* Users can request publication only for their own completed audit reports;
+  neither private keys nor report bodies are returned from status endpoints.
+* Gas is testnet-only and capped on the signing path. The EVM window is
+  restricted to the attestation contract.
+* Contract publication proves publisher timestamping, **not verified AI findings**.
+* The subscription treasury and native fUSD checkout are unchanged.
+

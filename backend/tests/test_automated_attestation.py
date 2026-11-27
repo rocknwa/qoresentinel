@@ -1,0 +1,84 @@
+"""Automated attestation controls: wallet ownership, idempotency, quotas and signer guards."""
+import hashlib
+from unittest.mock import Mock
+from fastapi import HTTPException
+
+from tests.conftest import TEST_WALLET
+
+def _job(client, project_id, text="# Analyzed report\n"):
+    from app import storage
+    job_id=storage.create_job(project_id,TEST_WALLET)
+    storage.set_job(job_id,status="completed",report=text,completed_agents=12)
+    return job_id
+
+def test_request_rejects_missing_incomplete_and_disabled(client, project_id, monkeypatch):
+    from app import storage
+    monkeypatch.setenv("QORE_ATTESTATION_ENABLED","true")
+    monkeypatch.delenv("QORE_ATTESTATION_CONTRACT",raising=False)
+    assert client.post("/api/v1/audits/missing/attestation/request").status_code==404
+    pending=storage.create_job(project_id,TEST_WALLET)
+    assert client.post(f"/api/v1/audits/{pending}/attestation/request").status_code==409
+    completed=_job(client, project_id)
+    monkeypatch.setenv("QORE_ATTESTATION_ENABLED","false")
+    assert client.post(f"/api/v1/audits/{completed}/attestation/request").status_code==503
+    monkeypatch.setenv("QORE_ATTESTATION_ENABLED","true")
+    assert client.post(f"/api/v1/audits/{completed}/attestation/request").status_code==503
+
+def test_request_idempotent_and_wallet_scoped(client,project_id,monkeypatch):
+    from app import storage, attestation_worker, attestation, auth
+    monkeypatch.setenv("QORE_ATTESTATION_ENABLED","true")
+    monkeypatch.setenv("QORE_ATTESTATION_CONTRACT",attestation_worker.CONTRACT)
+    monkeypatch.setattr(attestation,"report_status",lambda report:{"status":"not_attested","report_sha256":"0x"+hashlib.sha256(report.encode()).hexdigest()})
+    calls=[]
+    monkeypatch.setattr(attestation_worker,"process",lambda job_id:calls.append(job_id))
+    job=_job(client,project_id)
+    url=f"/api/v1/audits/{job}/attestation/request"
+    first=client.post(url)
+    assert first.status_code==202,first.text
+    assert first.json()["status"]=="queued"
+    assert first.json()["tx_hash"] is None
+    second=client.post(url)
+    assert second.status_code==202,second.text
+    assert storage.get_attestation_request(job,TEST_WALLET)["status"]=="queued"
+    assert calls==[job,job]
+    client.app.dependency_overrides[auth.require_wallet]=lambda:"qor1someoneelse"
+    assert client.post(url).status_code==404
+    assert client.get(f"/api/v1/audits/{job}/attestation/request").status_code==404
+
+def test_request_quota_three_audits_per_day(client,project_id,monkeypatch):
+    from app import attestation_worker, attestation
+    monkeypatch.setenv("QORE_ATTESTATION_ENABLED","true")
+    monkeypatch.setenv("QORE_ATTESTATION_CONTRACT",attestation_worker.CONTRACT)
+    monkeypatch.setattr(attestation,"report_status",lambda report:{"status":"not_attested"})
+    monkeypatch.setattr(attestation_worker,"process",lambda job_id:None)
+    for i in range(3):
+        job=_job(client,project_id,f"# Report {i}\n")
+        assert client.post(f"/api/v1/audits/{job}/attestation/request").status_code==202
+    job=_job(client,project_id,"# Report four\n")
+    assert client.post(f"/api/v1/audits/{job}/attestation/request").status_code==429
+
+def test_worker_credential_and_destination_guards(monkeypatch):
+    from app import attestation_worker as worker
+    monkeypatch.setenv("QORE_NETWORK","mainnet")
+    with __import__("pytest").raises(worker.PublishError):
+        worker.publisher()
+    monkeypatch.setenv("QORE_NETWORK","testnet")
+    monkeypatch.delenv("QORE_ATTESTATION_PRIVATE_KEY",raising=False)
+    with __import__("pytest").raises(worker.PublishError):
+        worker.publisher()
+    monkeypatch.setenv("QORE_ATTESTATION_CONTRACT","0x"+"1"*40)
+    with __import__("pytest").raises(worker.PublishError):
+        worker.contract_address()
+
+def test_submitted_tx_does_not_retry_blindly(client,project_id,monkeypatch):
+    from app import storage,attestation_worker
+    job=_job(client,project_id)
+    digest="0x"+hashlib.sha256("# Analyzed report\n".encode()).hexdigest()
+    storage.reserve_attestation_request(job,TEST_WALLET,digest)
+    storage.update_attestation_request(job,status="submitted",tx_hash="0x"+"a"*64)
+    called=[]
+    monkeypatch.setattr(attestation_worker,"publisher",lambda:called.append("signed"))
+    monkeypatch.setattr(attestation_worker.chain,"rpc",lambda method,params=None:None)
+    attestation_worker.process(job)
+    assert called==[]
+    assert storage.get_attestation_request(job,TEST_WALLET)["status"]=="submitted"
