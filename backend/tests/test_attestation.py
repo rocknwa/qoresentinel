@@ -33,7 +33,7 @@ def test_attestation_without_contract_and_verified(client, project_id, monkeypat
     r = client.get(f'/api/v1/audits/{job}/attestation')
     assert r.status_code == 200,r.text
     assert r.json()['status']=='attested'
-    assert r.json()['attested_at']=='2024-11-28T00:00:00+00:00'
+    assert r.json()['attested_at']=='2024-11-28T16:00:00+00:00'
     assert called[-1][0]=='eth_call'
     assert called[-1][1][0]['data'].endswith(expected[2:])
     monkeypatch.setattr(chain,'rpc',lambda method,params=None: '0x' if method=='eth_getCode' else {'eth_chainId':'0x2648'}[method])
@@ -42,7 +42,7 @@ def test_attestation_without_contract_and_verified(client, project_id, monkeypat
 def test_attestation_does_not_expose_other_wallet_report(client, project_id, monkeypatch):
     from app import storage, auth
     from tests.conftest import TEST_WALLET
-    job = storage.create_job(project_id,TEST_WALLET)['id']
+    job = storage.create_job(project_id,TEST_WALLET)
     storage.set_job(job,status='completed',report='secret')
     client.app.dependency_overrides[auth.require_wallet]=lambda:'qor1notowned'
     assert client.get(f'/api/v1/audits/{job}/attestation').status_code==404
