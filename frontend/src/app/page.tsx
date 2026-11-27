@@ -126,7 +126,12 @@ export default function Home(){
      const matching=allAudits.find(x=>x.id===jobId);
      const existing=recentProjects.find(x=>x.id===loaded.project_id);
      setProject(existing||{id:loaded.project_id,name:matching?.project_name||'Saved audit'});
-     setAudit(loaded);setSelectedAuditId(jobId);setAuditQuestion('');setAuditMessages([]);
+     setAudit(loaded);setAttestation(null);setAttestationRequest(null);setAttestationError('');
+     if(loaded.status==='completed'){
+       api.attestationRequest(jobId).then(setAttestationRequest).catch(()=>{});
+       api.attestation(jobId).then(setAttestation).catch(e=>setAttestationError(e instanceof Error?e.message:'Attestation unavailable'));
+     }
+     setSelectedAuditId(jobId);setAuditQuestion('');setAuditMessages([]);
      const messages=await api.auditMessages(jobId);
      setAuditMessages(messages.messages);
      if(loaded.status==='queued'||loaded.status==='running'){
@@ -206,6 +211,16 @@ export default function Home(){
    void load();
    return()=>{active=false};
  },[pathname,signedIn,audit?.id]);
+ useEffect(()=>{
+   if(!audit?.id||!signedIn||!attestationRequest||!['queued','processing','submitted'].includes(attestationRequest.status))return;
+   let active=true;
+   const timer=setInterval(()=>{
+     void Promise.all([api.attestationRequest(audit.id),api.attestation(audit.id)])
+       .then(([request,status])=>{if(active){setAttestationRequest(request);setAttestation(status);}})
+       .catch(()=>{});
+   },6000);
+   return()=>{active=false;clearInterval(timer);};
+ },[audit?.id,signedIn,attestationRequest?.status]);
  async function refreshGas(address:string){
    const balance=await api.nativeBalance(address);
    setGasBalance(balance.amount_raw);
@@ -475,7 +490,7 @@ function renderAuditAttestation(){if(!audit||audit.status!=='completed')return n
    <p className="help-text">Only the publisher can anchor the SHA-256 digest. This verifies report publication, not accuracy of the AI findings.</p>
    {attestation.status!=='attested' && attestation.status!=='not_configured' &&
     (!attestationRequest||['not_requested','queued','failed'].includes(attestationRequest.status))?
-    <button className="primary" disabled={attestationBusy||attestationRequest?.status==='failed'} onClick={()=>void requestAttestationFromUI()}>
+    <button className="primary" disabled={attestationBusy||(attestationRequest?.status==='failed'&&Boolean(attestationRequest.tx_hash))} onClick={()=>void requestAttestationFromUI()}>
      <ShieldCheck size={16}/>{attestationBusy?'Requesting…':attestationRequest?.status==='queued'?'Retry publishing queued request':'Request on-chain attestation'}
     </button>:null}
    {attestationRequest?.status==='failed'?<p className="help-text">Attestation could not be published. Contact support before retrying.</p>:null}
