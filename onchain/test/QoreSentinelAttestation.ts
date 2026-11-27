@@ -16,14 +16,14 @@ describe("QoreSentinelAttestation", async () => {
 
   it("stores the publisher and starts with no attestations", async () => {
     const contract = await setup();
-    assert.equal((await contract.read.publisher()).toLowerCase(), owner.account.address.toLowerCase());
+    assert.equal(String(await contract.read.publisher()).toLowerCase(), owner.account.address.toLowerCase());
     assert.equal(await contract.read.attestedAt([digest]), 0n);
   });
 
   it("anchors a report digest and emits the digest and publisher", async () => {
     const contract = await setup();
     await viem.assertions.emit(contract.write.attest([digest]), contract, "ReportAttested");
-    assert.ok((await contract.read.attestedAt([digest])) > 0n);
+    assert.ok(BigInt(String(await contract.read.attestedAt([digest]))) > 0n);
     assert.equal(await contract.read.attestedAt([digest2]), 0n);
   });
 
