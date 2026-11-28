@@ -3,7 +3,7 @@ import {useEffect,useRef,useState} from 'react';
 import {usePathname} from 'next/navigation';
 import {VIEW_PATHS,viewFromPathname,auditIdFromPathname,auditReportPath,type View} from '@/lib/routes';
 import {Activity,ArrowRight,Bell,BookOpen,CheckCircle2,ChevronDown,CircleAlert,Clock3,CloudUpload,Code2,CreditCard,Download,FileCode2,FileSearch,FileText,Fingerprint,FolderOpen,HelpCircle,Hexagon,LayoutDashboard,LockKeyhole,Menu,MessageSquareText,Plus,Radio,RefreshCcw,Search,Settings2,Shield,ShieldAlert,ShieldCheck,Sparkles,Upload,Wallet, X} from 'lucide-react';
-import {api,setAccessToken,type Audit,type AttestationStatus,type AuditSummary,type AuditMessage,type ChainTx,type Project,type PqcScan,type TxEvidence,type PaymentIntent,type PendingPaymentIntent,type PlanQuote,type UsageWindow} from '@/lib/api';
+import {api,setAccessToken,type Audit,type AttestationStatus,type AttestationRequest,type AuditSummary,type AuditMessage,type ChainTx,type Project,type PqcScan,type TxEvidence,type PaymentIntent,type PendingPaymentIntent,type PlanQuote,type UsageWindow} from '@/lib/api';
 import {connectQoreX,loginProof,nativeSend,sendHybridProof,requestQoreXUnlock,FAUCET_URL,QOREX_CHROME_URL,QOREX_FIREFOX_URL,QOREX_NETWORK_GUIDE,hasQoreXNative,classifyQoreXError,type QoreXConnectIssue} from '@/lib/wallet';
 
 const agentNames=['Access Control','Asymmetry','Boundary','Economic Security','Execution Trace','First Principles','Flow Gap','Invariant','Math Precision','Numerical Gap','Periphery','Trust Gap'];
@@ -38,7 +38,7 @@ export default function Home(){
  const [source,setSource]=useState('// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\ncontract MyContract {\n    // Paste your Solidity code here\n}');
  const [files,setFiles]=useState<File[]>([]);const [mode,setMode]=useState<'paste'|'upload'>('paste');
  const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');
- const [audit,setAudit]=useState<Audit|null>(null);const [attestation,setAttestation]=useState<AttestationStatus|null>(null);const [attestationError,setAttestationError]=useState('');const [agentExpanded,setAgentExpanded]=useState(false);
+ const [audit,setAudit]=useState<Audit|null>(null);const [attestation,setAttestation]=useState<AttestationStatus|null>(null);const [attestationRequest,setAttestationRequest]=useState<AttestationRequest|null>(null);const [attestationBusy,setAttestationBusy]=useState(false);const [attestationError,setAttestationError]=useState('');const [agentExpanded,setAgentExpanded]=useState(false);
  const fileRef=useRef<HTMLInputElement>(null);
  const [nativeAddress,setNativeAddress]=useState('');const [signedIn,setSignedIn]=useState(false);
  const [gasBalance,setGasBalance]=useState<string|null>(null);
@@ -191,7 +191,8 @@ export default function Home(){
          api.auditMessages(id),api.getProject(result.project_id).catch(()=>null)
        ]);
        if(!active)return;
-       setAudit(result);setAttestation(null);setAttestationError('');
+       setAudit(result);setAttestation(null);setAttestationRequest(null);setAttestationError('');
+        if(result.status==='completed')api.attestationRequest(id).then(setAttestationRequest).catch(()=>{});
         if(result.status==='completed')api.attestation(id).then(setAttestation).catch(e=>setAttestationError(e instanceof Error?e.message:'Attestation unavailable'));
         setSelectedAuditId(id);setAuditMessages(messages.messages);
        setProject(storedProject||{id:result.project_id,name:allAudits.find(x=>x.id===id)?.project_name||'Saved audit'});
@@ -244,7 +245,7 @@ export default function Home(){
    try{await api.logout();}catch(e){setError(e instanceof Error?e.message:'Could not sign out');return;}
    setWalletIssue(null);setWalletMessage('');setSignedIn(false);setNativeAddress('');setGasBalance(null);setPendingLogin(null);
    setNeedsFaucet(false);setAccessToken('');setSubscription(null);setUsage(null);setRecentProjects([]);
-   setProject(null);setAudit(null);setAttestation(null);setAttestationError('');setPqcScan(null);setPqcWalletLocked(false);setPqcProjectId('');setPqcInputMode('project');setPqcSource('');setPqcUploads([]);setPaymentIntent(null);setPaymentHash('');setFunding(null);setFundingMessage('');setFundingError('');
+   setProject(null);setAudit(null);setAttestation(null);setAttestationRequest(null);setAttestationError('');setPqcScan(null);setPqcWalletLocked(false);setPqcProjectId('');setPqcInputMode('project');setPqcSource('');setPqcUploads([]);setPaymentIntent(null);setPaymentHash('');setFunding(null);setFundingMessage('');setFundingError('');
    setAllAudits([]);setTransactions([]);setMoreAudits(false);setMoreTransactions(false);setAuditMessages([]);setSelectedAuditId('');
    setPendingPayments([]);setPendingPaymentError('');setManualPaymentHash('');
  }
@@ -252,7 +253,7 @@ export default function Home(){
    let closed=false;
    const poll=async()=>{try{const status=await api.audit(jobId);if(closed)return;
      setAgentDone(status.completed_agents);
-     if(status.status==='completed'){setAudit(status);setAttestation(null);setAttestationError('');api.attestation(status.id).then(setAttestation).catch(e=>setAttestationError(e instanceof Error?e.message:'Attestation unavailable'));setSelectedAuditId(status.id);setAuditMessages([]);setBusy(false);setJobId('');navigateAudit(status.id);api.audits().then(x=>{setAllAudits(x.audits);setMoreAudits(x.has_more)}).catch(()=>{});}
+     if(status.status==='completed'){setAudit(status);setAttestation(null);setAttestationRequest(null);setAttestationError('');api.attestationRequest(status.id).then(setAttestationRequest).catch(()=>{});api.attestation(status.id).then(setAttestation).catch(e=>setAttestationError(e instanceof Error?e.message:'Attestation unavailable'));setSelectedAuditId(status.id);setAuditMessages([]);setBusy(false);setJobId('');navigateAudit(status.id);api.audits().then(x=>{setAllAudits(x.audits);setMoreAudits(x.has_more)}).catch(()=>{});}
      if(status.status==='failed'){setBusy(false);setJobId('');setError(status.error||'Audit failed.');}
    }catch(e){if(!closed){setBusy(false);setJobId('');setError(e instanceof Error?e.message:'Audit status unavailable');}}};
    void poll();const ticker=setInterval(poll,4000);return()=>{closed=true;clearInterval(ticker)};
@@ -434,20 +435,53 @@ export default function Home(){
    if(next==='transaction-history'||next==='settings'||next==='overview')refreshTransactions();
    if(next==='billing'){void refreshPendingPayments();api.usage().then(setUsage).catch(()=>{});}}
  async function submitAudit(){setError('');setNotice('');if(!signedIn){setError('Sign in with QoreX Native to submit an audit.');return;}
- setBusy(true);setAudit(null);setAttestation(null);setAttestationError('');setSelectedAuditId('');setAuditMessages([]);setAgentDone(0);navigate('audit-progress');try{
+ setBusy(true);setAudit(null);setAttestation(null);setAttestationRequest(null);setAttestationError('');setSelectedAuditId('');setAuditMessages([]);setAgentDone(0);navigate('audit-progress');try{
   const created=await api.createProject(projectName.trim()||'Untitled project');setProject(created);setRecentProjects(prev=>[created,...prev]);
   if(mode==='paste')await api.pasteSource(created.id,source);else{if(!files.length)throw new Error('Select at least one .sol file or a ZIP project.');await api.upload(created.id,files);}
   const job=await api.runAudit(created.id);setJobId(job.id);navigateAudit(job.id,'audit-progress');
   setNotice('Your source was accepted. The twelve-agent security audit is queued.');
  }catch(e){setBusy(false);setError(e instanceof Error?e.message:'Unexpected audit error');}}
- function renderAuditAttestation(){if(!audit||audit.status!=='completed')return null;return <section className="panel" style={{marginTop:16,padding:18}}>
-  <div className="panel-head"><div><span className="eyebrow">ON-CHAIN EVIDENCE</span><h2>Audit report attestation</h2></div><button className="secondary" onClick={()=>{setAttestationError('');api.attestation(audit.id).then(setAttestation).catch(e=>setAttestationError(e instanceof Error?e.message:'Attestation unavailable'));}}>Refresh</button></div>
-  {attestationError?<p className="help-text">{attestationError}</p>:!attestation?<p className="help-text">Checking testnet attestation…</p>:
-  <div className="service-list"><div><span>Status</span><strong>{attestation.status==='attested'?'Verified on Diana':attestation.status==='not_configured'?'Not configured':'Not attested yet'}</strong></div>
-  <div><span>SHA-256 (report bytes)</span><code style={{overflowWrap:'anywhere'}}>{attestation.report_sha256}</code></div>
-  {attestation.contract_address?<div><span>Contract (Diana EVM 9800)</span><code style={{overflowWrap:'anywhere'}}>{attestation.contract_address}</code></div>:null}
-  {attestation.attested_at?<div><span>Published at (UTC)</span><span>{attestation.attested_at}</span></div>:null}
-  <p className="help-text">The digest anchors the exact report bytes, not the correctness of AI findings. No report contents are published on-chain.</p></div>}
+ async function refreshAttestation(){
+  if(!audit||audit.status!=='completed')return;
+  try{
+    setAttestationError('');
+    const [status,request]=await Promise.all([api.attestation(audit.id),api.attestationRequest(audit.id)]);
+    setAttestation(status);setAttestationRequest(request);
+  }catch(e){setAttestationError(e instanceof Error?e.message:'Attestation verification unavailable');}
+}
+async function requestAttestationFromUI(){
+  if(!audit||audit.status!=='completed'||attestationBusy)return;
+  setAttestationBusy(true);setAttestationError('');
+  try{
+    const request=await api.requestAttestation(audit.id);
+    setAttestationRequest(request);
+    const status=await api.attestation(audit.id);
+    setAttestation(status);
+  }catch(e){setAttestationError(e instanceof Error?e.message:'Attestation request failed');}
+  finally{setAttestationBusy(false);}
+}
+function renderAuditAttestation(){if(!audit||audit.status!=='completed')return null;return <section className="panel" style={{marginTop:16,padding:18}}>
+  <div className="panel-head"><div><span className="eyebrow">ON-CHAIN EVIDENCE</span><h2>Audit report attestation</h2></div>
+  <button className="secondary" onClick={()=>void refreshAttestation()} disabled={attestationBusy}>Refresh</button></div>
+  {attestationError?<p className="help-text" role="alert">{attestationError}</p>:null}
+  {!attestation?<p className="help-text">Checking Diana testnet attestation…</p>:
+  <div className="service-list">
+   <div><span>On-chain report status</span><strong>{attestation.status==='attested'?'Verified on Diana':attestation.status==='not_configured'?'Not configured':'Not attested yet'}</strong></div>
+   <div><span>SHA-256 (report bytes)</span><code style={{overflowWrap:'anywhere'}}>{attestation.report_sha256}</code></div>
+   {attestation.contract_address?<div><span>Contract (Diana EVM 9800)</span><code style={{overflowWrap:'anywhere'}}>{attestation.contract_address}</code></div>:null}
+   {attestation.attested_at?<div><span>Published at (UTC)</span><span>{attestation.attested_at}</span></div>:null}
+   {attestationRequest?<div><span>Publication request</span><strong>{attestationRequest.status.replace('_',' ')}</strong></div>:null}
+   {attestationRequest?.tx_hash?<div><span>Transaction</span><code style={{overflowWrap:'anywhere'}}>{attestationRequest.tx_hash}</code></div>:null}
+   <p className="help-text">Only the publisher can anchor the SHA-256 digest. This verifies report publication, not accuracy of the AI findings.</p>
+   {attestation.status!=='attested' && attestation.status!=='not_configured' &&
+    (!attestationRequest||['not_requested','queued'].includes(attestationRequest.status)||(attestationRequest.status==='failed'&&attestationRequest.can_retry))?
+    <button className="primary" disabled={attestationBusy} onClick={()=>void requestAttestationFromUI()}>
+     <ShieldCheck size={16}/>{attestationBusy?'Requesting…':attestationRequest?.status==='queued'?'Retry publishing queued request':attestationRequest?.status==='failed'?'Retry failed attestation':'Request on-chain attestation'}
+    </button>:null}
+   {attestationRequest?.status==='failed'?<p className="help-text">Attestation could not be published. {attestationRequest.can_retry?'You can safely retry because no EVM transaction hash was recorded.':'Retry limit reached or transaction outcome uncertain; contact support.'}</p>:null}
+   {attestationRequest&&['queued','processing','submitted'].includes(attestationRequest.status)?
+    <p className="help-text">Publication is pending. Use Refresh to check confirmations; this may take a short while.</p>:null}
+  </div>}
 </section>}
   function saveReport(){if(!audit?.report_markdown)return;const url=URL.createObjectURL(new Blob([audit.report_markdown],{type:'text/markdown'}));const a=document.createElement('a');a.href=url;a.download=`qoresentinel-audit-${project?.id||'report'}.md`;a.click();URL.revokeObjectURL(url)}
  return <div className="shell">

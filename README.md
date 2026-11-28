@@ -19,6 +19,7 @@ From source submission to security reporting, cryptographic inventory, and on-ch
 | **PQC Readiness** | QoreScan inventories cryptographic references from a saved project, pasted Solidity, or uploaded source files/ZIP. | Algorithm classifications, source-line evidence, a CycloneDX 1.6 CBOM, and a readiness report. |
 | **Hybrid-signature proof** | QoreX authorizes a small Diana-native self-transfer; QoreSentinel inspects the chain response for the hybrid-signature extension and successful verification event. | A transaction hash and chain-reported hybrid-verification evidence. |
 | **Audit history** | Completed reports, running jobs, and per-audit discussions are retained against the authenticated wallet. | Private audit URLs and the ability to reopen a report without running it again. |
+| **On-chain report attestation** | An authenticated user requests publication of their completed audit's SHA-256 through the dedicated hybrid-authorized publisher. | A Diana testnet attestation timestamp and contract transaction hash, without publishing report contents. |
 | **Billing and usage** | The API applies wallet-scoped Free and Pro limits. Native fUSD payments become subscriptions only after the transaction is verified on-chain. | Current plan, remaining audit allowance, pending checkout state, and verified transaction activity. |
 
 ## The experience
@@ -47,6 +48,23 @@ A QoreX wallet establishes the workspace identity. A Solidity project is created
 Starting an audit creates a persistent job ID. The API reserves one of the wallet's available audit slots, queues execution, and reports progress as the twelve specialist analyses complete. The final synthesis is saved as Markdown alongside the individual agent results. The results page presents report-derived findings and their evidence alongside the complete security analysis.
 
 A report remains accessible through its private `/audits/{audit-id}` URL. The same wallet can reopen saved reports and discussion threads at any time. Server-side ownership checks keep audit history and report access private to the authenticated wallet.
+
+### Anchor an audit report on QoreChain
+
+The audit-results page lets users request a free-on-testnet, publisher-signed
+on-chain attestation of their **completed, wallet-owned audit**. A dedicated
+Render backend publisher uses an ML-DSA-87 hybrid-signed native authorization
+window restricted to the deployed `QoreSentinelAttestation` contract, then
+publishes only the report's SHA-256 digest. The UI displays request progress,
+transaction hash and the chain-verified timestamp once confirmed.
+
+The publisher contract, `0x457962c68d6F3BeaAdAF47456402F57Fb40Fc6BF`, is
+deployed on Diana testnet (EVM chain ID 9800). Automatic publishing is enabled
+only when configured with the dedicated publisher credentials. The report
+contents remain wallet-protected in the backend, and on-chain publication
+is evidence of timestamped report bytes—not proof that AI findings are true.
+The implementation applies a three-distinct-attestation daily wallet limit,
+idempotent requests and bounded fees.
 
 ### Map post-quantum exposure
 
