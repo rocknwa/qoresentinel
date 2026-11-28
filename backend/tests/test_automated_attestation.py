@@ -113,6 +113,8 @@ def test_transaction_signing_checksums_destination(client,project_id,monkeypatch
     saved=storage.get_attestation_request(job,TEST_WALLET)
     assert len(sent)==1
     assert saved["tx_hash"]==hash_value
+    assert hash_value.startswith("0x") and len(hash_value)==66
+    assert sent[0].startswith("0x") and len(sent[0])>200
     assert saved["status"]=="submitted"
     assert Account.recover_transaction(sent[0]).lower()==signer.evm.lower()
 
@@ -128,3 +130,33 @@ def test_prebroadcast_failed_request_can_retry_after_two_attempts(client,project
         row=storage.reserve_attestation_request(job,TEST_WALLET,digest)
         assert row["status"]=="queued"
     assert storage.get_attestation_request(job,TEST_WALLET)["attempts"]==2
+
+
+def test_legacy_unprefixed_hash_is_normalized_during_receipt_lookup(client,project_id,monkeypatch):
+    from app import storage,attestation_worker as worker
+    job=_job(client,project_id)
+    report="# Analyzed report\\n"
+    digest="0x"+hashlib.sha256(report.encode()).hexdigest()
+    storage.reserve_attestation_request(job,TEST_WALLET,digest)
+    storage.update_attestation_request(job,status="submitted",tx_hash="a"*64)
+    requested=[]
+    def mock_rpc(method,params=None):
+        if method=="eth_getTransactionReceipt":
+            requested.append(params[0])
+            return None
+        raise AssertionError(method)
+    monkeypatch.setattr(worker.chain,"rpc",mock_rpc)
+    row=worker.reconcile(job,TEST_WALLET)
+    assert row["status"]=="submitted"
+    assert requested==["0x"+"a"*64]
+
+def test_legacy_hash_is_prefixed_in_user_response(client,project_id,monkeypatch):
+    from app import storage,attestation_worker as worker
+    job=_job(client,project_id)
+    digest="0x"+hashlib.sha256("# Analyzed report\\n".encode()).hexdigest()
+    storage.reserve_attestation_request(job,TEST_WALLET,digest)
+    storage.update_attestation_request(job,status="submitted",tx_hash="b"*64)
+    monkeypatch.setattr(worker,"reconcile",lambda job_id,owner:storage.get_attestation_request(job_id,owner))
+    r=client.get(f"/api/v1/audits/{job}/attestation/request")
+    assert r.status_code==200
+    assert r.json()["tx_hash"]=="0x"+"b"*64

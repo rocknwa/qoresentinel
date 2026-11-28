@@ -169,9 +169,9 @@ def _send_attestation(job_id, digest, account, contract):
         "gas":gas_limit, "gasPrice":gas_price, "nonce":nonce, "chainId":9800,
     }
     signed = Account.sign_transaction(transaction, account.private_key_hex)
-    tx_hash = signed.hash.hex()
+    tx_hash = "0x" + bytes(signed.hash).hex()
     storage.update_attestation_request(job_id, status="submitted", tx_hash=tx_hash)
-    chain.rpc("eth_sendRawTransaction", [signed.raw_transaction.hex()])
+    chain.rpc("eth_sendRawTransaction", ["0x" + bytes(signed.raw_transaction).hex()])
     return tx_hash
 
 
@@ -184,7 +184,12 @@ def reconcile(job_id, owner):
     digest = row["report_digest"]
     if row["tx_hash"]:
         try:
-            receipt = chain.rpc("eth_getTransactionReceipt", [row["tx_hash"]])
+            # Historical requests may have stored 64 hexadecimal digits without 0x.
+            # Ethereum JSON-RPC requires a 0x-prefixed 32-byte transaction hash.
+            tx_hash = row["tx_hash"]
+            if re.fullmatch(r"[a-fA-F0-9]{64}", tx_hash):
+                tx_hash = "0x" + tx_hash
+            receipt = chain.rpc("eth_getTransactionReceipt", [tx_hash])
             if receipt and receipt.get("status") == "0x0":
                 storage.update_attestation_request(job_id, status="failed")
             elif receipt and receipt.get("status") == "0x1":

@@ -202,7 +202,9 @@ def get_attestation_request(job_id:str,owner:str=Depends(require_wallet)):
         raise HTTPException(404,'Audit not found')
     row=attestation_worker.reconcile(job_id,owner)
     if not row:return {'status':'not_requested','tx_hash':None,'can_retry':True}
-    return {'status':row['status'],'tx_hash':row['tx_hash'],'report_sha256':row['report_digest'],
+    return {'status':row['status'],
+            'tx_hash':('0x'+row['tx_hash'] if row['tx_hash'] and len(row['tx_hash'])==64 and not row['tx_hash'].startswith('0x') else row['tx_hash']),
+            'report_sha256':row['report_digest'],
             'can_retry':row['status']=='failed' and not row['tx_hash'] and row.get('attempts',0)<4}
 
 @app.get('/api/v1/audits/{job_id}/attestation')
