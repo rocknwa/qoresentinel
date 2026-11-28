@@ -209,10 +209,12 @@ def process(job_id: str):
     row = storage._one(storage.attestation_requests, "job_id", job_id)
     if not row or row["status"] != "queued":
         return
+    stage = "publisher_lock"
     try:
         with publisher_lock() as locked:
             if not locked:
                 return  # Remain queued; a later authenticated request can retry.
+            stage = "claim_request"
             if not storage.claim_attestation_request(job_id):
                 return
             row = storage._one(storage.attestation_requests, "job_id", job_id)
@@ -222,19 +224,30 @@ def process(job_id: str):
             digest = "0x" + __import__("hashlib").sha256(job["report"].encode("utf-8")).hexdigest()
             if digest != row["report_digest"]:
                 raise PublishError("Report changed after attestation request")
+            stage = "check_contract_config"
             contract = contract_address()
+            stage = "derive_publisher_keys"
             acct = publisher()
+            stage = "verify_contract_publisher"
             check_chain(contract, acct)
+            stage = "check_existing_attestation"
             proof = attestation.report_status(job["report"])
             if proof["status"] == "attested":
                 storage.update_attestation_request(job_id, status="confirmed")
                 return
+            stage = "open_hybrid_window"
             _open_scoped_window(acct, contract)
             # Opening a QoreChain window advances the EVM nonce; nonce is read only here.
+            stage = "prepare_and_send_evm_tx"
             _send_attestation(job_id, digest, acct, contract)
+            stage = "reconcile_evm_receipt"
             reconcile(job_id, row["owner"])
     except Exception as exc:
-        LOG.warning("Attestation worker could not finish (%s)", type(exc).__name__)
+        # Only PublishError strings are static messages authored in this module.
+        # Third-party error strings may embed credentials or signed payloads.
+        safe_detail = str(exc) if isinstance(exc, PublishError) else "see exception type"
+        LOG.error("Attestation failed stage=%s exception=%s detail=%s",
+                  stage, type(exc).__name__, safe_detail)
         row = storage._one(storage.attestation_requests, "job_id", job_id)
         if row and not row["tx_hash"]:
             storage.update_attestation_request(job_id, status="failed")
