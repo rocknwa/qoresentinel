@@ -1,4 +1,4 @@
-import Home from '../page';
+import Home from '../workspace-client';
 import { WORKSPACE_SECTIONS } from '@/lib/routes';
 
 // Render only known workspace sections; unknown slugs return a real 404.
