@@ -134,7 +134,7 @@ All paths are relative to the FastAPI service; protected endpoints require the w
 
 ## Persistence and service design
 
-SQLAlchemy manages QoreSentinel's wallet-linked data model through the `projects`, `challenges`, `audit_jobs`, `audit_messages`, `subscriptions`, `payment_intents`, `payment_broadcasts`, `usage_events` and `chain_transactions` tables.
+SQLAlchemy manages QoreSentinel's wallet-linked data model through the `projects`, `challenges`, `audit_jobs`, `audit_messages`, `subscriptions`, `payment_intents`, `payment_broadcasts`, `usage_events`, `chain_transactions` and `attestation_requests` tables.
 
 The service brings together three evidence streams: **specialist audit reports and findings**, **QoreScan source-level cryptographic inventories**, and **QoreChain transaction and hybrid-signature records**. Each is preserved and presented in its own context, giving users a connected view of contract behavior, cryptographic dependencies, and network verification.
 
@@ -173,9 +173,19 @@ The API exposes `POST /api/v1/audits/{id}/attestation/request` (202) and
 `GET /api/v1/audits/{id}/attestation/request` for request and recovery status,
 in addition to the existing `GET /api/v1/audits/{id}/attestation` chain read.
 
+### Live verification (28 November 2026)
+
+A completed wallet-owned report was successfully attested **from the web UI**, using the hosted FastAPI publisher and the existing Diana contract, without manually invoking the terminal publisher. The application displayed `confirmed`, `Verified on Diana`, and the UTC publication timestamp **2026-11-28 09:06:22**.
+
+- **Report SHA-256:** `0x5dad307f63853af2af9590c2ac3656895e1e64385603c60937264d11d653039f`
+- **Attestation EVM tx:** `0x4ba2f6d45ce7afe5a0eef16c34f820d4528a29149890633860e38e79e9f2a958`
+- **Contract:** `0x457962c68d6F3BeaAdAF47456402F57Fb40Fc6BF` (Diana chain `9800`)
+
+The earlier deployment-window native hybrid transaction `B8F95A264E7B9CAA9F4B2D8CE60ECBEDAB238AF6315580CB93813FE0DCC17B42` was separately confirmed by chain-reported signature evidence. It is **not** claimed to be the distinct window-opening transaction used in the automatic UI request. The first end-to-end run validates this workflow on testnet; it does not establish high availability, production key custody, or report-finding correctness.
+
 ### Confirmation and recovery
 
-The EVM transaction hash is stored **before** broadcast to support recovery.
+The EVM transaction hash is stored **before** broadcast to support recovery. Signed raw transactions and hashes are `0x`-prefixed for Ethereum JSON-RPC; legacy hashes without a prefix are normalised during receipt lookups.
 A confirmed receipt and matching on-chain report digest are required before
 status becomes `confirmed`. If an EVM hash exists and the outcome is
 uncertain, the worker will **not** blindly resend a transaction. A signed
@@ -183,7 +193,7 @@ transaction without confirmation remains `submitted` until checked again.
 Native-window transactions must confirm with a chain-reported hybrid signature.
 
 For the demo, the user can refresh the audit page to reconcile an existing
-transaction or resubmit a still-queued request. FastAPI background tasks are
+transaction or resubmit a still-queued request. Failed pre-broadcast requests without a stored transaction hash may be retried within a bounded four-attempt cap. Requests with a recorded hash are not blindly resent: establish their outcome using `eth_getTransactionReceipt`, `eth_getTransactionByHash` and the publisher nonce first. FastAPI background tasks are
 not a durable job queue; unusual interruptions may need operator inspection.
 Do not operate more than one independent publisher service against the same
 wallet without sharing its PostgreSQL database and lock.

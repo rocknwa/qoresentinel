@@ -4,7 +4,7 @@
 
 Every smart contract raises two security questions: *What can go wrong in its logic?* And *which cryptographic systems does it depend on?* QoreSentinel brings both answers into one wallet-connected workspace on QoreChain.
 
-With **12 specialist security agents and a final judge**, QoreSentinel analyzes Solidity contracts and delivers detailed findings with source evidence. Alongside the audit, **QoreScan-powered PQC Readiness** identifies cryptographic dependencies, highlights quantum-vulnerable algorithms, and generates a CycloneDX 1.6 Cryptographic Bill of Materials (CBOM). **QoreX and QoreChain Diana** complete the experience with wallet-based access, hybrid-signature transaction evidence, and testnet fUSD subscriptions.
+With **12 specialist security agents and a final judge**, QoreSentinel analyzes Solidity contracts and delivers detailed findings with source evidence. Alongside the audit, **QoreScan-powered PQC Readiness** identifies cryptographic dependencies, highlights quantum-vulnerable algorithms, and generates a CycloneDX 1.6 Cryptographic Bill of Materials (CBOM). **QoreX and QoreChain Diana** complete the experience with wallet-based access, hybrid-signature transaction evidence, automated on-chain audit-report attestations, and testnet fUSD subscriptions.
 
 From source submission to security reporting, cryptographic inventory, and on-chain verification, QoreSentinel gives builders a connected view of their contracts.
 
@@ -31,6 +31,8 @@ flowchart LR
     S --> P["PQC readiness"]
     A --> R["12 specialists<br/>Final report"]
     R --> H["Private audit history<br/>Report discussion"]
+    H --> AT["Request report attestation"]
+    AT --> AE["Diana EVM<br/>SHA-256 + timestamp"]
     P --> C["Crypto inventory<br/>CBOM export"]
     W --> X["Diana hybrid proof"]
     X --> E["Chain verification evidence"]
@@ -65,6 +67,24 @@ contents remain wallet-protected in the backend, and on-chain publication
 is evidence of timestamped report bytes—not proof that AI findings are true.
 The implementation applies a three-distinct-attestation daily wallet limit,
 idempotent requests and bounded fees.
+
+#### Verified live attestation (28 November 2026)
+
+The **wallet-authenticated web interface** successfully requested publication of a completed audit. QoreSentinel's backend publisher submitted the report digest and the application subsequently displayed **`confirmed`** and **`Verified on Diana`**, with an on-chain publication timestamp.
+
+| Evidence | Value |
+| --- | --- |
+| Network | QoreChain Diana testnet, EVM chain ID `9800` |
+| Attestation contract | [`0x457962c68d6F3BeaAdAF47456402F57Fb40Fc6BF`](https://explore.qore.network/) (select Testnet and search the address) |
+| Contract publisher (EVM) | `0x28ae5289681319a1b0c05b3ffbbb658d15ad33e9` |
+| Sample audit report SHA-256 | `0x5dad307f63853af2af9590c2ac3656895e1e64385603c60937264d11d653039f` |
+| Confirmed UI-requested attestation tx | `0x4ba2f6d45ce7afe5a0eef16c34f820d4528a29149890633860e38e79e9f2a958` |
+| On-chain publication (UTC) | **2026-11-28 09:06:22** |
+| Deployment-era hybrid EVM-window native tx | `B8F95A264E7B9CAA9F4B2D8CE60ECBEDAB238AF6315580CB93813FE0DCC17B42` — independently checked for the `PQCHybridSignature` extension and `pqc_hybrid_verify=verified` |
+
+The deployment-era hybrid-window transaction is **not** presented as the native-window transaction for the UI-requested attestation; that separate hash was not captured in this documentation. Hashes above are public testnet evidence, not report contents. The SHA-256 attests exact saved report bytes and publication time, **not** the correctness of the security findings. The screenshots/logs from the successful end-to-end run were recorded on 28 November 2026.
+
+**Try it:** Connect QoreX on Diana, run or reopen a completed audit, select **Request on-chain attestation**, and watch the results panel progress from `queued` / `processing` / `submitted` to `confirmed`. The page then shows **Verified on Diana**, the published timestamp and the transaction hash. Reports are wallet-owned; the publisher pays testnet gas rather than asking the user to expose signing keys. See the [backend](backend/README.md#automated-report-attestations-diana-only) and [on-chain module](onchain/README.md) for implementation and recovery details.
 
 ### Map post-quantum exposure
 
@@ -106,6 +126,8 @@ flowchart TB
     AUTH --> CHAIN["QoreChain Diana<br/>Native REST"]
     BILL --> CHAIN
     API -->|"Hybrid proof evidence"| CHAIN
+    API --> ATTEST["Publisher: hybrid authorization + EVM attestation"]
+    ATTEST --> DIANA["Diana EVM · chain 9800"]
 ```
 
 The Next.js frontend manages navigation, contract submission, wallet interaction, and report exports. FastAPI handles session verification, project access, usage enforcement, audits, cryptographic inventory, and settlement checks. Project records, audit reports, discussions, and subscriptions are stored in PostgreSQL.
@@ -115,7 +137,8 @@ The Next.js frontend manages navigation, contract submission, wallet interaction
 | [`frontend/`](frontend/README.md) | Workspace routes, QoreX interaction, QoreScan presentation, audit progress and billing UI. |
 | [`backend/`](backend/README.md) | API, persistent state, twelve-specialist audit orchestration, QoreScan execution, QoreChain evidence and payment verification. |
 | `backend/audit/` | Specialist-agent orchestration, report synthesis, prompts and cloud-provider adapters. |
-| `backend/tests/` | Authentication, billing, job history, direct API authorization, PQC, wallet session and scanner regression tests. |
+| `backend/tests/` | Authentication, billing, job history, direct API authorization, PQC, wallet session, scanner and attestation regression tests. |
+| [`onchain/`](onchain/README.md) | Deployed Solidity attestation contract, Hardhat tests, hybrid-window scripts, deployment instructions and on-chain evidence. |
 
 
 ## Security and access
