@@ -3,7 +3,7 @@ export type AuditSummary={id:string;project_id:string;project_name:string;status
 export type AuditMessage={id:string;role:'user'|'assistant';body:string;created_at:string};
 export type ChainTx={tx_hash:string;kind:string;denom:string;amount_raw:string;status:string;created_at:string};
 export type ReportFinding={severity:string;title:string;evidence:string;source:string;verified:boolean};
-export type AttestationRequest={status:'not_requested'|'queued'|'processing'|'submitted'|'confirmed'|'failed';tx_hash:string|null;report_sha256?:string};
+export type AttestationRequest={status:'not_requested'|'queued'|'processing'|'submitted'|'confirmed'|'failed';tx_hash:string|null;report_sha256?:string;can_retry:boolean};
 export type AttestationStatus={
  status:'not_configured'|'not_attested'|'attested'; report_sha256:string;
  contract_address:string|null; chain_id:number; network:string; attested_at:string|null;

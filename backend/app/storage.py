@@ -91,7 +91,7 @@ def get_attestation_request(job_id: str, owner: str):
 def reserve_attestation_request(job_id: str, owner: str, digest: str, max_daily: int = 3):
     """Idempotently reserve one on-chain publication per completed audit.
 
-    A failed request without a prepared on-chain tx may be attempted twice.
+    A failed request without a prepared on-chain tx may be attempted four times.
     Quota is counted per distinct audit job; retries do not evade the cap.
     """
     owner = owner.lower()
@@ -112,7 +112,7 @@ def reserve_attestation_request(job_id: str, owner: str, digest: str, max_daily:
             old = dict(row)
             if old['owner'] != owner or old['report_digest'] != digest:
                 return {'error': 'conflict'}
-            if old['status'] == 'failed' and not old['tx_hash'] and old['attempts'] < 2:
+            if old['status'] == 'failed' and not old['tx_hash'] and old['attempts'] < 4:
                 conn.execute(update(attestation_requests).where(
                     (attestation_requests.c.job_id == job_id) &
                     (attestation_requests.c.status == 'failed') &
@@ -122,7 +122,7 @@ def reserve_attestation_request(job_id: str, owner: str, digest: str, max_daily:
             elif old['status'] == 'processing' and not old['tx_hash']:
                 try:
                     last = datetime.fromisoformat(old['updated_at'])
-                    if (datetime.now(timezone.utc) - last).total_seconds() > 600 and old['attempts'] < 2:
+                    if (datetime.now(timezone.utc) - last).total_seconds() > 600 and old['attempts'] < 4:
                         conn.execute(update(attestation_requests).where(
                             (attestation_requests.c.job_id == job_id) &
                             (attestation_requests.c.status == 'processing') &

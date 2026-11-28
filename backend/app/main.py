@@ -192,7 +192,8 @@ def request_audit_attestation(job_id:str,tasks:BackgroundTasks,owner:str=Depends
         result['status']='confirmed'
     elif result['status']=='queued':
         tasks.add_task(attestation_worker.process,job_id)
-    return {'status':result['status'],'report_sha256':digest,'tx_hash':result.get('tx_hash')}
+    return {'status':result['status'],'report_sha256':digest,'tx_hash':result.get('tx_hash'),
+            'can_retry':result['status']=='failed' and not result.get('tx_hash') and result.get('attempts',0)<4}
 
 @app.get('/api/v1/audits/{job_id}/attestation/request')
 def get_attestation_request(job_id:str,owner:str=Depends(require_wallet)):
@@ -200,8 +201,9 @@ def get_attestation_request(job_id:str,owner:str=Depends(require_wallet)):
     if not storage.get_job(job_id,owner):
         raise HTTPException(404,'Audit not found')
     row=attestation_worker.reconcile(job_id,owner)
-    if not row:return {'status':'not_requested','tx_hash':None}
-    return {'status':row['status'],'tx_hash':row['tx_hash'],'report_sha256':row['report_digest']}
+    if not row:return {'status':'not_requested','tx_hash':None,'can_retry':True}
+    return {'status':row['status'],'tx_hash':row['tx_hash'],'report_sha256':row['report_digest'],
+            'can_retry':row['status']=='failed' and not row['tx_hash'] and row.get('attempts',0)<4}
 
 @app.get('/api/v1/audits/{job_id}/attestation')
 def audit_attestation(job_id:str,owner:str=Depends(require_wallet)):

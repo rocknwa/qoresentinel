@@ -474,11 +474,11 @@ function renderAuditAttestation(){if(!audit||audit.status!=='completed')return n
    {attestationRequest?.tx_hash?<div><span>Transaction</span><code style={{overflowWrap:'anywhere'}}>{attestationRequest.tx_hash}</code></div>:null}
    <p className="help-text">Only the publisher can anchor the SHA-256 digest. This verifies report publication, not accuracy of the AI findings.</p>
    {attestation.status!=='attested' && attestation.status!=='not_configured' &&
-    (!attestationRequest||['not_requested','queued','failed'].includes(attestationRequest.status))?
-    <button className="primary" disabled={attestationBusy||attestationRequest?.status==='failed'} onClick={()=>void requestAttestationFromUI()}>
-     <ShieldCheck size={16}/>{attestationBusy?'Requesting…':attestationRequest?.status==='queued'?'Retry publishing queued request':'Request on-chain attestation'}
+    (!attestationRequest||['not_requested','queued'].includes(attestationRequest.status)||(attestationRequest.status==='failed'&&attestationRequest.can_retry))?
+    <button className="primary" disabled={attestationBusy} onClick={()=>void requestAttestationFromUI()}>
+     <ShieldCheck size={16}/>{attestationBusy?'Requesting…':attestationRequest?.status==='queued'?'Retry publishing queued request':attestationRequest?.status==='failed'?'Retry failed attestation':'Request on-chain attestation'}
     </button>:null}
-   {attestationRequest?.status==='failed'?<p className="help-text">Attestation could not be published. Contact support before retrying.</p>:null}
+   {attestationRequest?.status==='failed'?<p className="help-text">Attestation could not be published. {attestationRequest.can_retry?'You can safely retry because no EVM transaction hash was recorded.':'Retry limit reached or transaction outcome uncertain; contact support.'}</p>:null}
    {attestationRequest&&['queued','processing','submitted'].includes(attestationRequest.status)?
     <p className="help-text">Publication is pending. Use Refresh to check confirmations; this may take a short while.</p>:null}
   </div>}

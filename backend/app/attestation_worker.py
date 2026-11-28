@@ -12,7 +12,7 @@ import time
 from contextlib import contextmanager
 
 from eth_account import Account
-from eth_utils import keccak
+from eth_utils import keccak, to_checksum_address
 from sqlalchemy import text
 
 from . import attestation, chain, storage
@@ -165,7 +165,7 @@ def _send_attestation(job_id, digest, account, contract):
         raise PublishError("Transaction exceeds authorized gas budget")
     nonce = int(chain.rpc("eth_getTransactionCount", [account.evm, "pending"]), 16)
     transaction = {
-        "to": contract, "value":0, "data":calldata,
+        "to": to_checksum_address(contract), "value":0, "data":calldata,
         "gas":gas_limit, "gasPrice":gas_price, "nonce":nonce, "chainId":9800,
     }
     signed = Account.sign_transaction(transaction, account.private_key_hex)
