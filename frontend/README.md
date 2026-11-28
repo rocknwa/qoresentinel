@@ -4,10 +4,17 @@
 
 QoreSentinel takes users from a Solidity contract to a detailed security report, a cryptographic inventory, and QoreChain hybrid-signature evidence. The workspace brings together 12-specialist contract analysis, QoreScan-generated CBOMs, private audit history, UI-requested QoreChain audit attestations, and QoreX-powered testnet activity without splitting the process across separate tools.
 
-Built with Next.js 15, React 19, and TypeScript, the interface connects to a FastAPI backend that manages audit execution, wallet authentication, report access, and subscriptions.
+Built with Next.js 15, React 19, and TypeScript, the workspace connects to a FastAPI backend that manages audit execution, wallet authentication, report access, and subscriptions.
 
-**Live workspace:** https://qoresentinel.vercel.app  
+**Public landing page:** https://qoresentinel.vercel.app  
+**Existing workspace:** https://qoresentinel.vercel.app/overview  
 **Network:** QoreChain Diana testnet (`qorechain-diana` / EVM chain ID `9800`)
+
+## Public landing page and preserved workspace
+
+The root route `/` now presents QoreSentinel's public product landing page. It introduces the 12-specialist auditing engine, QoreScan cryptographic inventory, verified Diana report-attestation evidence, and clear calls to action for `/new-audit` and `/overview`. Its interface preview is **illustrative** and is explicitly labeled as such; no fabricated customer numbers or audit results are shown.
+
+**The existing Overview screen is unchanged** at `/overview`, and all other workspace routes including `/audits/{audit-id}` remain available with their existing wallet-authenticated behavior. The original workspace implementation now resides in `src/app/workspace-client.tsx`; known workspace routes load that component rather than the public root page. Landing styles live in `src/app/landing.css` and are scoped to `.lp-root` so workspace design remains intact.
 
 ## From wallet connection to security insight
 
@@ -102,7 +109,8 @@ The wallet's broadcast hash can be retained against an intent so an interrupted 
 
 | Route | Screen |
 | --- | --- |
-| `/overview` | Workspace status and recent activity. |
+| `/` | Public product landing page, no wallet required. |
+| `/overview` | Existing workspace status and recent activity, preserved. |
 | `/new-audit` | Solidity project submission and audit launch. |
 | `/audit-progress` | Agent-completion progress for an active job. |
 | `/audit-results` | The currently selected report, its discussion and on-chain report-attestation panel. |
@@ -121,7 +129,8 @@ The sidebar uses browser-history-aware routes; back/forward navigation and direc
 | Area | Implementation |
 | --- | --- |
 | **Application** | Next.js 15 App Router, React 19, TypeScript and Lucide icons. |
-| **Workspace screen** | `src/app/page.tsx` contains session state, source submission, audit polling, report-attestation request/status UI, QoreScan display, payment recovery and wallet interactions. |
+| **Public landing** | `src/app/page.tsx` is the server-rendered marketing page; `src/app/landing.css` contains isolated styling. |
+| **Workspace screen** | `src/app/workspace-client.tsx` preserves session state, source submission, audit polling, report-attestation request/status UI, QoreScan display, payment recovery and wallet interactions. |
 | **Navigation** | `src/lib/routes.ts` maps sections to URLs and parses audit identifiers. `src/app/[section]/` and `src/app/audits/[auditId]/` provide route entry points. |
 | **API client** | `src/lib/api.ts` calls FastAPI through the `/backend-proxy` rewrite, manages the in-memory Bearer token and works with the HTTP-only session cookie; it also provides the authenticated report-attestation request and status endpoints. |
 | **QoreX integration** | `src/lib/wallet.ts` requests native wallet access, constructs MsgSend transfers, classifies wallet errors and delegates signing/broadcast to QoreX. |
